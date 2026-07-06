@@ -1,0 +1,16 @@
+#!/bin/bash
+# Wrapper around /usr/local/bin/caelestia that exports XDG user dirs
+# from ~/.config/user-dirs.dirs before running, since they are not
+# automatically exported as environment variables in Wayfire sessions.
+source ~/.config/user-dirs.dirs
+export XDG_DESKTOP_DIR XDG_DOWNLOAD_DIR XDG_TEMPLATES_DIR XDG_PUBLICSHARE_DIR
+export XDG_DOCUMENTS_DIR XDG_MUSIC_DIR XDG_PICTURES_DIR XDG_VIDEOS_DIR
+
+# In Wayfire, 'caelestia record' uses hyprctl which is unavailable.
+# Use our Wayfire-compatible replacement instead.
+if [[ "$1" == "record" ]] && [[ -n "$WAYFIRE_SOCKET" ]]; then
+    shift
+    exec __HOME__/.local/bin/caelestia-record-wayfire "$@"
+fi
+
+exec /usr/local/bin/caelestia "$@"

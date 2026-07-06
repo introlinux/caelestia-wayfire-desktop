@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""Replacement for 'caelestia record' that works on Wayfire (no hyprctl)."""
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+# Paths — same as caelestia's paths.py
+_state_dir = Path(os.getenv("XDG_STATE_HOME", Path.home() / ".local/state")) / "caelestia"
+_videos_dir = Path(os.getenv("XDG_VIDEOS_DIR", Path.home() / "Videos"))
+recordings_dir: Path = Path(os.getenv("CAELESTIA_RECORDINGS_DIR", _videos_dir / "Recordings"))
+recording_path: Path = _state_dir / "record/recording.mp4"
+recording_notif_path: Path = _state_dir / "record/notifid.txt"
+
+RECORDER = "gpu-screen-recorder"
+
+
+def notify(*args: str) -> str:
+    try:
+        result = subprocess.run(["notify-send", "--print-id", *args],
+                                capture_output=True, text=True)
+        return result.stdout.strip()
+    except Exception:
+        return ""
+
+
+def close_notification(notif_id: str) -> None:
+    try:
+        subprocess.run(["gdbus", "call", "--session",
+                        "--dest=org.freedesktop.Notifications",
+                        "--object-path=/org/freedesktop/Notifications",
+                        "--method=org.freedesktop.Notifications.CloseNotification",
+                        notif_id], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
+def proc_running() -> bool:
+    return subprocess.run(["pidof", RECORDER], stdout=subprocess.DEVNULL).returncode == 0
+
+
+def get_monitors() -> list[dict]:
+    """Get monitors using gpu-screen-recorder + xrandr (no hyprctl needed)."""
+    monitors = []
+    try:
+        gsr_out = subprocess.check_output(
+            [RECORDER, "--list-monitors"], text=True, stderr=subprocess.DEVNULL)
+        rr = get_refresh_rate()
+        for line in gsr_out.strip().splitlines():
+            if "|" not in line:
+                continue
+            name, res = line.split("|", 1)
+            name = name.strip()
+            w, h = map(int, res.strip().split("x"))
+            monitors.append({
+                "name": name,
+                "focused": True,
+                "refreshRate": rr,
+                "x": 0, "y": 0,
+                "width": w, "height": h,
+            })
+    except Exception:
+        pass
+    return monitors
+
+
+def get_refresh_rate() -> float:
+    """Get current refresh rate via xrandr."""
+    try:
+        out = subprocess.check_output(
+            ["xrandr"], text=True,
+            env={**os.environ, "DISPLAY": os.getenv("DISPLAY", ":0")},
+            stderr=subprocess.DEVNULL)
+        for line in out.splitlines():
+            m = re.search(r"(\d+\.?\d*)\*", line)
+            if m:
+                return float(m.group(1))
+    except Exception:
+        pass
+    return 60.0
+
+
+def intersects(a: tuple, b: tuple) -> bool:
+    return (a[0] < b[0] + b[2] and a[0] + a[2] > b[0] and
+            a[1] < b[1] + b[3] and a[1] + a[3] > b[1])
+
+
+def do_start(args: argparse.Namespace) -> None:
+    gsr_args = ["-w"]
+    monitors = get_monitors()
+
+    if args.region:
+        if args.region == "slurp":
+            region = subprocess.check_output(
+                ["slurp", "-f", "%wx%h+%x+%y"], text=True).strip()
+        else:
+            region = args.region.strip()
+        gsr_args += ["region", "-region", region]
+
+        m = re.match(r"(\d+)x(\d+)\+(\d+)\+(\d+)", region)
+        if m:
+            w, h, x, y = map(int, m.groups())
+            r = x, y, w, h
+            max_rr = 0
+            for mon in monitors:
+                if intersects((mon["x"], mon["y"], mon["width"], mon["height"]), r):
+                    max_rr = max(max_rr, round(mon["refreshRate"]))
+            if max_rr > 0:
+                gsr_args += ["-f", str(max_rr)]
+    else:
+        focused = next((mon for mon in monitors if mon["focused"]), None)
+        if focused:
+            gsr_args += [focused["name"], "-f", str(round(focused["refreshRate"]))]
+        else:
+            gsr_args += ["eDP-1", "-f", "60"]
+
+    if args.sound:
+        gsr_args += ["-a", "default_output"]
+
+    # Extra args from user config
+    try:
+        from caelestia.utils.paths import user_config_path
+        config = json.loads(user_config_path.read_text())
+        if "record" in config and "extraArgs" in config["record"]:
+            gsr_args += config["record"]["extraArgs"]
+    except Exception:
+        pass
+
+    recording_path.parent.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.Popen(
+        [RECORDER, *gsr_args, "-o", str(recording_path)],
+        start_new_session=True)
+
+    notif = notify("-p", "Recording started", "Recording...")
+    recording_notif_path.write_text(notif)
+
+    try:
+        if proc.wait(1) != 0:
+            close_notification(notif)
+            notify("Recording failed",
+                   f"Command `{' '.join(proc.args)}` failed with exit code {proc.returncode}")
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def do_stop(args: argparse.Namespace) -> None:
+    subprocess.run(["pkill", "-f", RECORDER], stdout=subprocess.DEVNULL)
+    while proc_running():
+        time.sleep(0.1)
+
+    new_path = recordings_dir / f"recording_{datetime.now().strftime('%Y%m%d_%H-%M-%S')}.mp4"
+    recordings_dir.mkdir(exist_ok=True, parents=True)
+    shutil.move(recording_path, new_path)
+
+    try:
+        close_notification(recording_notif_path.read_text())
+    except IOError:
+        pass
+
+    if getattr(args, "clipboard", False):
+        file_uri = Path(new_path).resolve().as_uri() + "\n"
+        subprocess.run(["wl-copy", "--type", "text/uri-list"],
+                       input=file_uri.encode())
+
+    action = notify(
+        "--action=watch=Watch",
+        "--action=open=Open",
+        "--action=delete=Delete",
+        "Recording stopped",
+        f"Recording saved in {new_path}",
+    )
+
+    if action == "watch":
+        subprocess.Popen(["xdg-open", str(new_path)], start_new_session=True)
+    elif action == "open":
+        subprocess.Popen(["xdg-open", str(new_path.parent)], start_new_session=True)
+    elif action == "delete":
+        new_path.unlink()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-r", "--region", nargs="?", const="slurp")
+    parser.add_argument("-s", "--sound", action="store_true")
+    parser.add_argument("-p", "--pause", action="store_true")
+    parser.add_argument("-c", "--clipboard", action="store_true")
+    args = parser.parse_args()
+
+    if args.pause:
+        subprocess.run(["pkill", "-USR2", "-f", RECORDER],
+                       stdout=subprocess.DEVNULL)
+    elif proc_running():
+        do_stop(args)
+    else:
+        do_start(args)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,85 @@
+{
+    "appearance": {
+        "font": {
+            "size": {
+                "scale": 0.8600955923807989
+            }
+        },
+        "padding": {
+            "scale": 0.8091941566318853
+        },
+        "rounding": {
+            "scale": 0.8716329196083871
+        },
+        "spacing": {
+            "scale": 0.5958915087035657
+        },
+        "transparency": {
+            "base": 0.7710315182817873
+        }
+    },
+    "background": {
+        "desktopClock": {
+            "enabled": true,
+            "position": "top-right"
+        },
+        "visualiser": {
+            "enabled": false
+        }
+    },
+    "bar": {
+        "workspaces": {
+            "shown": 4,
+            "windowIcons": [
+                {
+                    "icon": "public",
+                    "name": "firefox"
+                },
+                {
+                    "flags": "i",
+                    "icon": "folder",
+                    "regex": "nautilus"
+                },
+                {
+                    "flags": "i",
+                    "icon": "calculate",
+                    "regex": "calculator"
+                },
+                {
+                    "flags": "i",
+                    "icon": "Palette",
+                    "regex": "gimp"
+                },
+                {
+                    "flags": "i",
+                    "icon": "Description",
+                    "regex": "writer"
+                },
+                {
+                    "flags": "i",
+                    "icon": "Smart_Display",
+                    "regex": "showtime"
+                },
+                {
+                    "flags": "i",
+                    "icon": "Stylus",
+                    "regex": "inkscape"
+                }
+            ]
+        }
+    },
+    "border": {
+        "rounding": 23,
+        "thickness": 11
+    },
+    "general": {
+        "logo": "/usr/share/icons/Yaru/scalable/apps/gnome-aisleriot-symbolic.svg"
+    },
+    "launcher": {
+        "showOnHover": true
+    },
+    "services": {
+        "showLyrics": false,
+        "weatherLocation": "Tudela"
+    }
+}

@@ -1,0 +1,7 @@
+.direnv
+/result
+/.qmlls.ini
+build/
+.cache/
+logs
+build-i18n/

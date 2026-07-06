@@ -1,0 +1,14 @@
+#!/bin/bash
+#Script para girar imágenes a la derecha
+cierralanzador
+
+
+case $LANG in
+    es*) MSG="Archivo" ;;
+    gl*) MSG="Ficheiro" ;;
+    *) MSG="File" ;;
+esac
+
+
+(for i in "$@"; do CONTADOR=$[100*++parte/$#]; echo $CONTADOR; echo "#$CONTADOR% $MSG $i ";convert -rotate 90 "$i" "$i"; done)|zenity --progress --auto-close
+

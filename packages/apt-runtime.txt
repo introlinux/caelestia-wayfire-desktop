@@ -1,0 +1,65 @@
+# Compositor y utilidades Wayland
+wayfire
+wcm
+wstroke
+xdg-desktop-portal-wlr
+xdg-desktop-portal-gtk
+wlrctl
+wtype
+x11-xserver-utils
+# Captura / portapapeles
+grim
+slurp
+swappy
+hyprpicker
+cliphist
+wl-clipboard
+libnotify-bin
+# Hardware
+brightnessctl
+ddcutil
+lm-sensors
+# Audio
+pipewire
+pipewire-pulse
+wireplumber
+cava
+libaubio5
+aubio-tools
+# Cálculo (launcher)
+libqalculate23
+qalc
+# Apps base del entorno
+gnome-terminal
+nautilus
+yad
+fish
+python3-pip
+# Temas Yaru (GTK + iconos)
+yaru-theme-gtk
+yaru-theme-icon
+# Qt6 runtime + módulos QML que usa Caelestia
+qt6-wayland
+libqt6svg6
+qml6-module-qtcore
+qml6-module-qtnetwork
+qml6-module-qtqml
+qml6-module-qtqml-models
+qml6-module-qtqml-workerscript
+qml6-module-qtquick
+qml6-module-qtquick-controls
+qml6-module-qtquick-dialogs
+qml6-module-qtquick-effects
+qml6-module-qtquick-layouts
+qml6-module-qtquick-localstorage
+qml6-module-qtquick-particles
+qml6-module-qtquick-shapes
+qml6-module-qtquick-templates
+qml6-module-qtquick-vectorimage
+qml6-module-qtquick-window
+qml6-module-qt5compat-graphicaleffects
+qml6-module-qtmultimedia
+qml6-module-qt-labs-folderlistmodel
+qml6-module-qt-labs-platform
+qml6-module-qt-labs-qmlmodels
+qml6-module-qt-labs-settings

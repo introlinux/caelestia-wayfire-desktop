@@ -1,0 +1,13 @@
+#!/bin/bash
+# Simplified app2unit for Caelestia Shell
+if [ "$1" == "--" ]; then
+    shift
+fi
+LOG=/tmp/app2unit.log
+echo "$(date '+%T') cmd: $*" >> "$LOG"
+echo "  WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-UNSET}" >> "$LOG"
+echo "  DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-UNSET}" >> "$LOG"
+echo "  XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-UNSET}" >> "$LOG"
+echo "  XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-UNSET}" >> "$LOG"
+"$@" >> "$LOG" 2>&1 &
+echo "  PID=$!" >> "$LOG"

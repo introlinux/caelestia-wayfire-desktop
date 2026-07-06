@@ -1,0 +1,12 @@
+#!/bin/bash
+# Launcher for Quickshell/Caelestia in a real Wayfire session.
+# QML_IMPORT_PATH must point to the Qt6 QML dir so Caelestia modules are found.
+# In Hyprland this comes from the environment; in a GDM session it is not set.
+# GDM does not include ~/.local/bin in PATH; add it so app2unit and other helpers are found.
+export PATH="__HOME__/.local/bin:$PATH"
+export QML_IMPORT_PATH=/usr/lib/qt6/qml
+export QT_QPA_PLATFORM=wayland
+export QT_QPA_PLATFORMTHEME=gtk3
+
+exec /usr/local/bin/quickshell -c __HOME__/caelestia-wayfire \
+    >> /tmp/caelestia-qs.log 2>&1

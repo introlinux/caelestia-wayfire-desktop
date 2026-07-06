@@ -1,0 +1,4 @@
+#!/bin/bash
+pid=$(pgrep -f "quickshell -c __HOME__/caelestia-wayfire" | head -1)
+if [ -z "$pid" ]; then exit 1; fi
+exec qs ipc --pid "$pid" call "$@"

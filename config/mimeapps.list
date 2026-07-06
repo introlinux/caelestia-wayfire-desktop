@@ -1,0 +1,20 @@
+[Default Applications]
+x-scheme-handler/opencode=OpenCode-handler.desktop
+image/jpeg=org.gnome.Loupe.desktop
+x-scheme-handler/claude-cli=claude-code-url-handler.desktop
+text/markdown=org.gnome.TextEditor.desktop
+image/png=org.gnome.Loupe.desktop
+text/vnd.trolltech.linguist=org.gnome.TextEditor.desktop
+audio/mpeg=io.bassi.Amberol.desktop
+inode/directory=org.gnome.Nautilus.desktop
+application/json=org.gnome.TextEditor.desktop
+text/plain=org.gnome.TextEditor.desktop
+
+[Added Associations]
+image/jpeg=org.gnome.Loupe.desktop;
+text/markdown=org.gnome.TextEditor.desktop;
+image/png=org.gnome.Loupe.desktop;
+text/vnd.trolltech.linguist=org.gnome.TextEditor.desktop;
+audio/mpeg=io.bassi.Amberol.desktop;
+application/json=org.gnome.TextEditor.desktop;
+text/plain=org.gnome.TextEditor.desktop;

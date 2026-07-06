@@ -1,0 +1,54 @@
+# Toolchain
+build-essential
+cmake
+ninja-build
+meson
+pkg-config
+git
+curl
+unzip
+# Qt6 dev (Quickshell + plugin Caelestia)
+qt6-base-dev
+qt6-base-private-dev
+qt6-declarative-dev
+qt6-declarative-private-dev
+qt6-wayland-dev
+qt6-wayland-private-dev
+qt6-shadertools-dev
+qt6-svg-dev
+qt6-tools-dev
+qt6-tools-dev-tools
+# Quickshell
+libcli11-dev
+libjemalloc-dev
+libpipewire-0.3-dev
+libspa-0.2-dev
+libwayland-dev
+wayland-protocols
+libdrm-dev
+libgbm-dev
+libxcb1-dev
+libxkbcommon-dev
+libglvnd-dev
+libpam0g-dev
+# Plugin Caelestia (beat detector, visualiser, cálculo)
+libaubio-dev
+libqalculate-dev
+libfftw3-dev
+# gpu-screen-recorder
+libavcodec-dev
+libavformat-dev
+libavutil-dev
+libavfilter-dev
+libswresample-dev
+libswscale-dev
+libva-dev
+libcap-dev
+libdbus-1-dev
+libpulse-dev
+libvulkan-dev
+libx11-dev
+libxcomposite-dev
+libxdamage-dev
+libxfixes-dev
+libxrandr-dev

@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Force quit an app by its Wayland app-id using SIGKILL.
+# Tries multiple process name patterns to handle reverse-domain IDs like
+# org.gnome.TextEditor → gnome-text-editor.
+set -euo pipefail
+
+LOG=/tmp/caelestia-force-quit.log
+app_id="${1:-}"
+
+if [[ -z "$app_id" ]]; then
+    echo "Usage: caelestia-force-quit <app-id>" >&2
+    exit 1
+fi
+
+# Extract components of the reverse-domain ID
+# e.g. "com.spotify.Client" → last="Client"  second="spotify"
+last="${app_id##*.}"
+stripped="${app_id%.*}"
+second="${stripped##*.}"
+
+# Lowercase and kebab variants
+last_lower="${last,,}"
+kebab=$(echo "$last" | sed 's/\([A-Z]\)/-\1/g' | tr '[:upper:]' '[:lower:]' | sed 's/^-//')
+second_lower="${second,,}"
+
+echo "$(date '+%T') force-quit: appId=$app_id  last=$last_lower  kebab=$kebab  second=$second_lower" >> "$LOG"
+
+killed=0
+
+# 1. By lowercase last component (e.g. "calculator" matches "gnome-calculator")
+pkill -9 -i "$last_lower" 2>/dev/null && killed=1 || true
+
+# 2. By kebab-case (e.g. "text-editor" matches "gnome-text-editor")
+[[ "$kebab" != "$last_lower" ]] && { pkill -9 -i "$kebab" 2>/dev/null && killed=1 || true; }
+
+# 3. By second-to-last component when last is too generic (e.g. "spotify" for "com.spotify.Client")
+generic=("client" "app" "main" "bin" "gui" "ui" "desktop" "service" "daemon")
+is_generic=false
+for g in "${generic[@]}"; do [[ "$last_lower" == "$g" ]] && is_generic=true && break; done
+[[ "$is_generic" == true && -n "$second_lower" && "$second_lower" != "$last_lower" ]] && \
+    { pkill -9 -i "$second_lower" 2>/dev/null && killed=1 || true; }
+
+# 4. By full app-id in command line (catches Flatpak / AppImage launches)
+pkill -9 -f "$app_id" 2>/dev/null && killed=1 || true
+
+echo "$(date '+%T') force-quit: killed=$killed" >> "$LOG"
+exit 0

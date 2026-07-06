@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Move a specific Wayfire window to workspace N using vswitch/send-view.
+
+Identification strategy:
+  For each valid view-id, temporarily minimize it and check via
+  `wlrctl toplevel find state:minimized app_id:X` whether the TARGET
+  window just became minimized. This avoids any ordering assumption
+  between the ID scan and wlrctl output (they use different orderings).
+
+Note: stipc/feed_key does not trigger Super-modifier compositor bindings
+(Super is not propagated through Wayfire's xkb state via feed_key).
+
+Usage: wayfire-send-to-ws <ws_n> [app_id] [title]
+"""
+import sys, socket, json, struct, time, os, subprocess, datetime, glob
+
+LOG = '/tmp/wayfire-send-to-ws.log'
+
+def log(msg):
+    with open(LOG, 'a') as f:
+        f.write(f'{datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]} {msg}\n')
+
+# Daemonize so QML doesn't kill us when the popup component is destroyed.
+# The popup's Loader sets active=false during its close animation, which destroys
+# all child objects including the Process — sending SIGTERM mid-execution.
+# Double-fork detaches from the parent process group entirely.
+_pid = os.fork()
+if _pid > 0:
+    sys.exit(0)          # parent: exit immediately so QML sees clean exit
+os.setsid()              # child: new session, no controlling terminal
+_pid2 = os.fork()
+if _pid2 > 0:
+    sys.exit(0)          # first child exits; grandchild continues as daemon
+# Redirect stdin/stdout/stderr so the grandchild is fully detached
+for _fd in (0, 1, 2):
+    try:
+        os.close(_fd)
+    except OSError:
+        pass
+os.open(os.devnull, os.O_RDWR)  # stdin
+os.dup(0)                         # stdout → /dev/null
+os.dup(0)                         # stderr → /dev/null
+
+def ipc(sock_path, method, data=None):
+    s = socket.socket(socket.AF_UNIX)
+    s.connect(sock_path)
+    payload = {'method': method}
+    if data is not None:
+        payload['data'] = data
+    msg = json.dumps(payload).encode()
+    s.send(struct.pack('<I', len(msg)) + msg)
+    hdr = s.recv(4)
+    n = struct.unpack('<I', hdr)[0]
+    resp = b''
+    while len(resp) < n:
+        resp += s.recv(n - len(resp))
+    s.close()
+    return json.loads(resp)
+
+sock = os.environ.get('WAYFIRE_SOCKET', '')
+if not sock:
+    uid = os.getuid()
+    sockets = glob.glob(f'/run/user/{uid}/wayfire*.socket')
+    sock = sockets[0] if sockets else f'/run/user/{uid}/wayfire-wayland-1-.socket'
+
+ws_n   = int(sys.argv[1])
+app_id = sys.argv[2] if len(sys.argv) > 2 else ""
+title  = sys.argv[3] if len(sys.argv) > 3 else ""
+
+# Grid: 4 columns × 1 row
+x = (ws_n - 1) % 4
+y = (ws_n - 1) // 4
+wl = os.environ.get('WAYLAND_DISPLAY', 'wayland-1')
+env = {**os.environ, 'WAYLAND_DISPLAY': wl}
+
+log(f'called: ws_n={ws_n} app_id={app_id!r} title={title!r} target=({x},{y})')
+
+# ── Step 1: find all valid view IDs (safe no-op probe) ────────────────────────
+# Stop early once we have as many IDs as wlrctl reports (avoids scanning 500 IDs).
+try:
+    wlrctl_count = len([
+        l for l in subprocess.check_output(
+            ['wlrctl', 'toplevel', 'list'], env=env, timeout=3.0
+        ).decode().strip().split('\n') if l.strip()
+    ])
+except Exception as e:
+    wlrctl_count = 50
+    log(f'wlrctl list failed: {e}')
+
+valid_ids = []
+for vid in range(1, 500):
+    r = ipc(sock, 'wm-actions/set-always-on-top', {'view_id': vid, 'state': False})
+    if r.get('result') == 'ok':
+        valid_ids.append(vid)
+        if len(valid_ids) >= wlrctl_count:
+            break
+
+log(f'valid IDs: {valid_ids} (expected {wlrctl_count})')
+
+if not valid_ids:
+    log('ERROR: no valid view IDs found')
+    raise SystemExit(1)
+
+if len(valid_ids) == 1:
+    target_id = valid_ids[0]
+    log(f'single window — using view-id={target_id}')
+else:
+    # ── Step 2: identify target by minimize probe ─────────────────────────────
+    # Check initial minimized state to avoid false positives.
+    def target_is_minimized():
+        r = subprocess.run(
+            ['wlrctl', 'toplevel', 'find', f'app_id:{app_id}', 'state:minimized'],
+            env=env, capture_output=True, timeout=3.0
+        )
+        return r.returncode == 0
+
+    initially_minimized = target_is_minimized()
+    log(f'target initially minimized: {initially_minimized}')
+
+    target_id = None
+    for vid in valid_ids:
+        log(f'probing view-id={vid}')
+        ipc(sock, 'wm-actions/set-minimized', {'view_id': vid, 'state': True})
+        time.sleep(0.08)
+
+        now_minimized = target_is_minimized()
+        log(f'  after minimize: target_is_minimized={now_minimized}')
+
+        if not initially_minimized and now_minimized:
+            # This window became minimized and it matches our target app_id.
+            target_id = vid
+            log(f'identified target: view-id={target_id}')
+            # Restore it before sending to workspace.
+            ipc(sock, 'wm-actions/set-minimized', {'view_id': vid, 'state': False})
+            time.sleep(0.05)
+            break
+        else:
+            # Not the target (or target was already minimized) — restore and continue.
+            ipc(sock, 'wm-actions/set-minimized', {'view_id': vid, 'state': False})
+            time.sleep(0.05)
+
+    if target_id is None:
+        log('ERROR: could not identify target view-id')
+        raise SystemExit(1)
+
+# ── Step 3: send the window to workspace N ────────────────────────────────────
+r = ipc(sock, 'vswitch/send-view', {'view-id': target_id, 'x': x, 'y': y})
+log(f'vswitch/send-view view-id={target_id} -> {r}')
+log('done')
