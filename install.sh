@@ -16,7 +16,7 @@ BACKUP_DIR="${HOME}/.caelestia-wayfire-backup-$(date +%Y%m%d-%H%M%S)"
 
 # Versiones fijadas (las mismas con las que se creó el entorno original)
 QUICKSHELL_REPO="https://git.outfoxxed.me/quickshell/quickshell.git"
-QUICKSHELL_TAG="v0.2.1"
+QUICKSHELL_TAG="v0.3.0"
 LIBCAVA_REPO="https://github.com/LukashonakV/cava.git"
 LIBCAVA_TAG="0.10.7"
 GSR_REPO="https://repo.dec05eba.com/gpu-screen-recorder"
@@ -81,8 +81,8 @@ if [ "$SKIP_BUILDS" -eq 0 ]; then
     mkdir -p "$BUILD_DIR"
 
     # --- Quickshell -----------------------------------------------------------
-    if /usr/local/bin/quickshell --version 2>/dev/null | grep -q "0\.2\.1"; then
-        log "Quickshell 0.2.1 ya instalado — omitiendo"
+    if /usr/local/bin/quickshell --version 2>/dev/null | grep -q "0\.3\.0"; then
+        log "Quickshell 0.3.0 ya instalado — omitiendo"
     else
         log "Compilando Quickshell $QUICKSHELL_TAG (tardará varios minutos)"
         rm -rf "$BUILD_DIR/quickshell"
@@ -90,7 +90,9 @@ if [ "$SKIP_BUILDS" -eq 0 ]; then
         cmake -S "$BUILD_DIR/quickshell" -B "$BUILD_DIR/quickshell/build" -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DCMAKE_INSTALL_PREFIX=/usr/local \
-            -DCRASH_REPORTER=OFF \
+            -DCRASH_HANDLER=OFF \
+            -DSERVICE_POLKIT=OFF \
+            -DNETWORK=OFF \
             -DDISTRIBUTOR="caelestia-wayfire-desktop (self-built)"
         cmake --build "$BUILD_DIR/quickshell/build"
         sudo cmake --install "$BUILD_DIR/quickshell/build"
