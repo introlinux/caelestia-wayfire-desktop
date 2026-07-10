@@ -32,7 +32,7 @@ La fuente CaskaydiaCove Nerd Font se descarga de las releases de
 Sobre un Ubuntu 26.04 recién instalado (escritorio GNOME por defecto):
 
 ```bash
-git clone https://github.com/TU_USUARIO/caelestia-wayfire-desktop.git
+git clone https://github.com/introlinux/caelestia-wayfire-desktop.git
 cd caelestia-wayfire-desktop
 ./install.sh
 ```
