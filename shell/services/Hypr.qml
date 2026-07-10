@@ -139,6 +139,29 @@ Singleton {
 
     // ── Wayfire IPC ───────────────────────────────────────────────────────────
 
+    // Vigilante de workspace: mantiene el indicador sincronizado también cuando
+    // el cambio lo inicia el compositor (p. ej. activar una ventana de otro
+    // espacio desde la barra), no solo cuando lo pide el propio shell.
+    Process {
+        id: wsWatchProc
+        running: true
+        command: ["caelestia-ws-watch"]
+        stdout: SplitParser {
+            onRead: data => {
+                const n = parseInt(data.trim());
+                if (!isNaN(n) && n >= 1 && n <= 10)
+                    root._activeWsId = n;
+            }
+        }
+        onExited: wsWatchRestart.restart()
+    }
+
+    Timer {
+        id: wsWatchRestart
+        interval: 2000
+        onTriggered: wsWatchProc.running = true
+    }
+
     property string _socket: Quickshell.env("WAYFIRE_SOCKET") ?? ""
 
     function _ipcSend(method: string, data: var): void {

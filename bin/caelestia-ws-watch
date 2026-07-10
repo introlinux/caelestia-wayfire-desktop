@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Watch Wayfire workspace changes and print the active workspace number.
+
+Keeps a persistent IPC connection subscribed to `wset-workspace-changed`
+(ipc-rules plugin). Prints the 1-based workspace index (row-major over the
+workspace grid) once at startup and then every time the compositor switches
+workspace, whatever the cause (binding, vswitch, view activation...).
+
+Used by services/Hypr.qml to keep the Caelestia workspace indicator in sync.
+"""
+import sys, os, socket, json, struct, glob
+
+
+def recv_msg(s):
+    hdr = b''
+    while len(hdr) < 4:
+        chunk = s.recv(4 - len(hdr))
+        if not chunk:
+            return None
+        hdr += chunk
+    n = struct.unpack('<I', hdr)[0]
+    data = b''
+    while len(data) < n:
+        chunk = s.recv(n - len(data))
+        if not chunk:
+            return None
+        data += chunk
+    return json.loads(data)
+
+
+def send_msg(s, payload):
+    msg = json.dumps(payload).encode()
+    s.send(struct.pack('<I', len(msg)) + msg)
+
+
+def ws_index(x, y, grid_w):
+    return y * grid_w + x + 1
+
+
+def main():
+    sock_path = os.environ.get('WAYFIRE_SOCKET', '')
+    if not sock_path:
+        uid = os.getuid()
+        sockets = glob.glob(f'/run/user/{uid}/wayfire*.socket')
+        if not sockets:
+            sys.exit(1)
+        sock_path = sockets[0]
+
+    s = socket.socket(socket.AF_UNIX)
+    s.connect(sock_path)
+
+    # Estado inicial: workspace actual de la primera salida
+    send_msg(s, {'method': 'window-rules/list-outputs'})
+    outputs = recv_msg(s)
+    grid_w = 4
+    if isinstance(outputs, list) and outputs:
+        ws = outputs[0].get('workspace', {})
+        grid_w = ws.get('grid_width', 4) or 4
+        print(ws_index(ws.get('x', 0), ws.get('y', 0), grid_w), flush=True)
+
+    send_msg(s, {'method': 'window-rules/events/watch',
+                 'data': {'events': ['wset-workspace-changed']}})
+    recv_msg(s)  # respuesta {"result": "ok"} de la suscripción
+
+    while True:
+        msg = recv_msg(s)
+        if msg is None:
+            sys.exit(0)  # wayfire cerró el socket; QML nos reiniciará
+        if msg.get('event') != 'wset-workspace-changed':
+            continue
+        new = msg.get('new-workspace', {})
+        wsd = msg.get('wset-data') or {}
+        g = (wsd.get('workspace') or {}).get('grid_width', grid_w) or grid_w
+        print(ws_index(new.get('x', 0), new.get('y', 0), g), flush=True)
+
+
+if __name__ == '__main__':
+    main()
