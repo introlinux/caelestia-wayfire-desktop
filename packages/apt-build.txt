@@ -52,3 +52,4 @@ libxcomposite-dev
 libxdamage-dev
 libxfixes-dev
 libxrandr-dev
+libiniparser-dev
