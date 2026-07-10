@@ -302,6 +302,20 @@ if [ "$ONLY_DOTFILES" -eq 0 ]; then
         /usr/share/xdg-desktop-portal/wayfire-portals.conf
 fi
 
+# El brillo (brightnessctl) escribe en /sys/class/backlight/*/brightness, que
+# solo es escribible por root y el grupo "video". Sin pertenecer a ese grupo,
+# Brightness.qml falla en silencio (Quickshell.execDetached no reporta el
+# error) y el deslizador de brillo se mueve pero la pantalla no cambia.
+NEEDS_RELOGIN_FOR_VIDEO=0
+log "Comprobando permisos para el control de brillo (grupo 'video')"
+if id -nG "$USER" | grep -qw video; then
+    log "El usuario ya pertenece al grupo 'video' — el control de brillo debería funcionar"
+else
+    warn "El usuario no pertenece al grupo 'video': brightnessctl no podrá escribir el brillo. Añadiéndolo…"
+    sudo usermod -aG video "$USER"
+    NEEDS_RELOGIN_FOR_VIDEO=1
+fi
+
 log "Aplicando apariencia con gsettings (tema, iconos, cursor, fuente)"
 if command -v gsettings >/dev/null && [ -n "${DBUS_SESSION_BUS_ADDRESS:-}${XDG_RUNTIME_DIR:-}" ]; then
     gsettings set org.gnome.desktop.interface gtk-theme     'Yaru-wartybrown'  || true
@@ -340,6 +354,9 @@ else
     printf '\033[1;33m⚠ Instalación terminada con avisos (revisa los mensajes anteriores).\033[0m\n'
 fi
 [ -d "$BACKUP_DIR" ] && echo "Copias de seguridad de tus ficheros previos en: $BACKUP_DIR"
+if [ "$NEEDS_RELOGIN_FOR_VIDEO" -eq 1 ]; then
+    warn "Se te añadió al grupo 'video' (control de brillo). Es IMPRESCINDIBLE cerrar sesión y volver a entrar para que se aplique."
+fi
 cat <<'EOF'
 
 Siguientes pasos:
