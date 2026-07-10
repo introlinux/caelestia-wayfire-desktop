@@ -250,6 +250,14 @@ command -v caelestia >/dev/null || { warn "CLI caelestia no encontrada"; ok=0; }
 [ -d /usr/lib/qt6/qml/Caelestia ] || { warn "Plugin QML Caelestia no instalado"; ok=0; }
 [ -x "$HOME/.local/bin/caelestia-wayfire-start" ] || { warn "Falta caelestia-wayfire-start"; ok=0; }
 
+# -----------------------------------------------------------------------------
+# 7. Limpieza de archivos de compilación
+# -----------------------------------------------------------------------------
+if [ -d "$BUILD_DIR" ]; then
+    log "Limpiando archivos de compilación temporales ($BUILD_DIR)"
+    rm -rf "$BUILD_DIR"
+fi
+
 echo
 if [ "$ok" -eq 1 ]; then
     printf '\033[1;32m✔ Instalación completada.\033[0m\n'
