@@ -53,3 +53,14 @@ libxdamage-dev
 libxfixes-dev
 libxrandr-dev
 libiniparser-dev
+# Wayfire 0.10.1 + wayfire-plugins-extra
+libwlroots-0.19-dev
+libwf-config-dev
+libpixman-1-dev
+libglm-dev
+libpango1.0-dev
+libcairo2-dev
+libegl-dev
+libjpeg-dev
+libevdev-dev
+libboost-dev

@@ -15,6 +15,10 @@ BUILD_DIR="${REPO}/.build"
 BACKUP_DIR="${HOME}/.caelestia-wayfire-backup-$(date +%Y%m%d-%H%M%S)"
 
 # Versiones fijadas (las mismas con las que se creó el entorno original)
+WAYFIRE_REPO="https://github.com/WayfireWM/wayfire.git"
+WAYFIRE_TAG="v0.10.1"
+WF_PLUGINS_EXTRA_REPO="https://github.com/WayfireWM/wayfire-plugins-extra.git"
+WF_PLUGINS_EXTRA_TAG="v0.10.0"
 QUICKSHELL_REPO="https://git.outfoxxed.me/quickshell/quickshell.git"
 QUICKSHELL_TAG="v0.3.0"
 LIBCAVA_REPO="https://github.com/LukashonakV/cava.git"
@@ -79,6 +83,49 @@ fi
 # -----------------------------------------------------------------------------
 if [ "$SKIP_BUILDS" -eq 0 ]; then
     mkdir -p "$BUILD_DIR"
+
+    # --- Wayfire (compositor) --------------------------------------------------
+    # Se instala en /usr/local, que tiene prioridad en el PATH de la sesión GDM
+    # sobre el paquete de Ubuntu. Necesario para wayfire-plugins-extra (view-shot,
+    # extra-animations), que no está empaquetado en Ubuntu.
+    if /usr/local/bin/wayfire --version 2>/dev/null | grep -q "^0\.10\.1"; then
+        log "Wayfire 0.10.1 ya instalado en /usr/local — omitiendo"
+    else
+        log "Compilando Wayfire $WAYFIRE_TAG"
+        rm -rf "$BUILD_DIR/wayfire"
+        git clone --depth 1 --branch "$WAYFIRE_TAG" "$WAYFIRE_REPO" "$BUILD_DIR/wayfire"
+        meson setup "$BUILD_DIR/wayfire/build" "$BUILD_DIR/wayfire" \
+            --prefix=/usr/local --buildtype=release \
+            -Duse_system_wlroots=enabled -Duse_system_wfconfig=enabled -Dtests=disabled
+        ninja -C "$BUILD_DIR/wayfire/build"
+        sudo ninja -C "$BUILD_DIR/wayfire/build" install
+        sudo ldconfig
+        # El wayfire-portals.conf de upstream usa «default=wlr;*»: el comodín hace
+        # que xdg-desktop-portal intente el backend de GNOME, que se cuelga sin
+        # sesión GNOME (timeouts de 25 s por interfaz y apps que tardan minutos
+        # en abrir). Se sobrescribe con la versión segura del port.
+        sudo cp "$REPO/system/xdg-desktop-portal/wayfire-portals.conf" \
+            /usr/local/share/xdg-desktop-portal/wayfire-portals.conf
+    fi
+
+    # --- wayfire-plugins-extra (view-shot para miniaturas, animaciones extra) --
+    if [ -f /usr/local/lib/x86_64-linux-gnu/wayfire/libview-shot.so ]; then
+        log "wayfire-plugins-extra ya instalado — omitiendo"
+    else
+        log "Compilando wayfire-plugins-extra $WF_PLUGINS_EXTRA_TAG"
+        rm -rf "$BUILD_DIR/wayfire-plugins-extra"
+        git clone --depth 1 --branch "$WF_PLUGINS_EXTRA_TAG" "$WF_PLUGINS_EXTRA_REPO" \
+            "$BUILD_DIR/wayfire-plugins-extra"
+        # meson no detecta Boost solo-cabeceras (libboost-dev sin libs compiladas);
+        # los headers están en /usr/include, que el compilador ya usa por defecto.
+        sed -i "s/boost = dependency('boost')/boost = declare_dependency()/" \
+            "$BUILD_DIR/wayfire-plugins-extra/src/extra-animations/meson.build"
+        PKG_CONFIG_PATH=/usr/local/lib/x86_64-linux-gnu/pkgconfig meson setup \
+            "$BUILD_DIR/wayfire-plugins-extra/build" "$BUILD_DIR/wayfire-plugins-extra" \
+            --prefix=/usr/local --buildtype=release
+        ninja -C "$BUILD_DIR/wayfire-plugins-extra/build"
+        sudo ninja -C "$BUILD_DIR/wayfire-plugins-extra/build" install
+    fi
 
     # --- Quickshell -----------------------------------------------------------
     if /usr/local/bin/quickshell --version 2>/dev/null | grep -q "0\.3\.0"; then
@@ -246,6 +293,7 @@ log "Comprobando la instalación"
 ok=1
 /usr/local/bin/quickshell --version 2>/dev/null || { warn "quickshell no responde"; ok=0; }
 command -v wayfire >/dev/null || { warn "wayfire no está instalado"; ok=0; }
+[ -f /usr/local/lib/x86_64-linux-gnu/wayfire/libview-shot.so ] || { warn "Falta view-shot (miniaturas de la barra degradarán a icono)"; ok=0; }
 command -v caelestia >/dev/null || { warn "CLI caelestia no encontrada"; ok=0; }
 [ -d /usr/lib/qt6/qml/Caelestia ] || { warn "Plugin QML Caelestia no instalado"; ok=0; }
 [ -x "$HOME/.local/bin/caelestia-wayfire-start" ] || { warn "Falta caelestia-wayfire-start"; ok=0; }

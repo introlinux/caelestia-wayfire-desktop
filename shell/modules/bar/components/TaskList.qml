@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
 import Caelestia.Config
 import qs.components
 import qs.services
@@ -32,6 +33,24 @@ ColumnLayout {
 
             readonly property bool isActive: Hypr.activeToplevel === modelData
             readonly property bool isMinimized: modelData.minimized ?? false
+
+            // Publish this icon's rect as the toplevel's minimize target so the
+            // compositor's squeezimize (magic lamp) animation aims at the icon.
+            function publishMinimizeRect(): void {
+                const win = wrapper.QsWindow.window;
+                if (!win || wrapper.width <= 0 || wrapper.height <= 0)
+                    return;
+                const pos = wrapper.mapToItem(null, 0, 0);
+                wrapper.modelData.setRectangle(win, Qt.rect(
+                    Math.round(pos.x), Math.round(pos.y),
+                    Math.round(wrapper.width), Math.round(wrapper.height)));
+            }
+
+            Component.onCompleted: publishMinimizeRect()
+            onXChanged: publishMinimizeRect()
+            onYChanged: publishMinimizeRect()
+            onWidthChanged: publishMinimizeRect()
+            onHeightChanged: publishMinimizeRect()
 
 
             Rectangle {
@@ -76,10 +95,12 @@ ColumnLayout {
                 onEntered: {
                     hoverClearTimer.stop()
                     Hypr.hoveredToplevel = wrapper.modelData
+                    wrapper.publishMinimizeRect()
                 }
                 onExited: hoverClearTimer.restart()
 
                 onClicked: {
+                    wrapper.publishMinimizeRect()
                     if (wrapper.isMinimized) {
                         wrapper.modelData.minimized = false
                         wrapper.modelData.activate()

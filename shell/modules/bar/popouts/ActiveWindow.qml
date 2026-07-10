@@ -83,13 +83,67 @@ Item {
             }
         }
 
-        // App icon (wlr-screencopy cannot capture individual toplevels in Wayfire)
-        CachingIconImage {
+        // Window thumbnail via Wayfire IPC (view-shot); falls back to the app
+        // icon when the capture is unavailable (e.g. plugin not loaded).
+        Item {
+            id: thumb
+
             anchors.horizontalCenter: parent.horizontalCenter
-            implicitSize: 96
-            width: 96
-            height: 96
-            source: Icons.getAppIcon(root.previewToplevel?.appId ?? "", "application-x-executable")
+            width: 192
+            height: 120
+
+            property var thumbTarget: root.previewToplevel
+            onThumbTargetChanged: capture()
+            Component.onCompleted: capture()
+
+            function capture(): void {
+                const t = root.previewToplevel;
+                if (!t)
+                    return;
+                if (thumbProc.running)
+                    thumbProc.running = false;
+                const safeId = (t.appId ?? "app").replace(/[^a-zA-Z0-9._-]/g, "_");
+                thumbProc.command = [
+                    "caelestia-view-thumb",
+                    t.appId ?? "", t.title ?? "",
+                    `/tmp/caelestia-thumb-${safeId}.png`
+                ];
+                thumbProc.running = true;
+            }
+
+            Process {
+                id: thumbProc
+                running: false
+                stdout: SplitParser {
+                    onRead: data => {
+                        const file = data.trim();
+                        if (!file)
+                            return;
+                        // Force a reload even if the path is unchanged
+                        thumbImage.source = "";
+                        thumbImage.source = "file://" + file;
+                    }
+                }
+                onExited: running = false
+            }
+
+            Image {
+                id: thumbImage
+                anchors.fill: parent
+                fillMode: Image.PreserveAspectFit
+                cache: false
+                asynchronous: true
+                visible: status === Image.Ready
+            }
+
+            CachingIconImage {
+                anchors.centerIn: parent
+                implicitSize: 96
+                width: 96
+                height: 96
+                visible: thumbImage.status !== Image.Ready
+                source: Icons.getAppIcon(root.previewToplevel?.appId ?? "", "application-x-executable")
+            }
         }
 
         // Workspace send buttons (workspaces 1-4)

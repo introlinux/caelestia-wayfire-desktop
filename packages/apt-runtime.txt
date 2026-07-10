@@ -5,6 +5,7 @@ wstroke
 xdg-desktop-portal-wlr
 xdg-desktop-portal-gtk
 wlrctl
+xwayland
 wtype
 x11-xserver-utils
 # Captura / portapapeles
