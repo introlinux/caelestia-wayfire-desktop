@@ -24,6 +24,11 @@ Item {
 
     property alias currentName: popoutState.currentName
     property alias hasCurrent: popoutState.hasCurrent
+    readonly property alias suppressed: popoutState.suppressed
+
+    function suppressBriefly(): void {
+        popoutState.suppressBriefly();
+    }
     property real currentCenter
 
     property string detachedMode

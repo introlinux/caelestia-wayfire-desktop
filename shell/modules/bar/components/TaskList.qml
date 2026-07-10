@@ -11,6 +11,10 @@ import qs.utils
 ColumnLayout {
     id: root
 
+    // Bar popouts wrapper; used to close the hover preview when clicking an
+    // icon, so it does not cover the minimize/restore animation.
+    property var popouts: null
+
     spacing: Tokens.spacing.normal
 
     // Shared timer: prevents flicker when moving quickly between window icons.
@@ -100,6 +104,7 @@ ColumnLayout {
                 onExited: hoverClearTimer.restart()
 
                 onClicked: {
+                    root.popouts?.suppressBriefly()
                     wrapper.publishMinimizeRect()
                     if (wrapper.isMinimized) {
                         wrapper.modelData.minimized = false

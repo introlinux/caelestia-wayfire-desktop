@@ -69,7 +69,7 @@ ColumnLayout {
                 popouts.hasCurrent = false;
                 tray.expanded = true;
             }
-        } else if (id === "activeWindow" && Config.bar.popouts.activeWindow && Config.bar.activeWindow.showOnHover) {
+        } else if (id === "activeWindow" && Config.bar.popouts.activeWindow && Config.bar.activeWindow.showOnHover && !popouts.suppressed) {
             popouts.currentName = id.toLowerCase();
             popouts.currentCenter = (ch.item as Item).mapToItem(root, 0, (ch.item as Item).implicitHeight / 2).y ?? 0;
             popouts.hasCurrent = true;
@@ -134,7 +134,9 @@ ColumnLayout {
                 delegate: WrappedLoader {
                     Layout.fillWidth: true
                     visible: !root.fullscreen
-                    sourceComponent: TaskList {}
+                    sourceComponent: TaskList {
+                        popouts: root.popouts
+                    }
                 }
             }
             DelegateChoice {
