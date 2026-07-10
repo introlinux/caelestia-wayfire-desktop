@@ -127,6 +127,15 @@ if [ "$SKIP_BUILDS" -eq 0 ]; then
         sudo ninja -C "$BUILD_DIR/wayfire-plugins-extra/build" install
     fi
 
+    # --- shift-switcher (animación de raise estilo baraja de cartas, in-repo) --
+    log "Compilando wayfire-shift-switcher"
+    rm -rf "$BUILD_DIR/wayfire-shift-switcher"
+    PKG_CONFIG_PATH=/usr/local/lib/x86_64-linux-gnu/pkgconfig meson setup \
+        "$BUILD_DIR/wayfire-shift-switcher" "$REPO/wayfire-shift-switcher" \
+        --prefix=/usr/local --buildtype=release
+    ninja -C "$BUILD_DIR/wayfire-shift-switcher"
+    sudo ninja -C "$BUILD_DIR/wayfire-shift-switcher" install
+
     # --- Quickshell -----------------------------------------------------------
     if /usr/local/bin/quickshell --version 2>/dev/null | grep -q "0\.3\.0"; then
         log "Quickshell 0.3.0 ya instalado — omitiendo"

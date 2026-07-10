@@ -1,3 +1,4 @@
 shell/build*/
 .build/
 *.log
+wayfire-shift-switcher/build/

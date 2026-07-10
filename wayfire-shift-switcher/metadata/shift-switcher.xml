@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<wayfire>
+    <plugin name="shift-switcher">
+        <_short>Shift Switcher</_short>
+        <_long>Raises windows with a card-deck animation (Compiz shift style): a covered window slides out of the stack and back on top, so the eye can follow where it went.</_long>
+        <category>Effects</category>
+        <option name="duration" type="animation">
+            <_short>Animation duration</_short>
+            <_long>Total duration of the pull-out/slide-back animation.</_long>
+            <default>600ms linear</default>
+        </option>
+        <option name="tilt" type="double">
+            <_short>Card tilt</_short>
+            <_long>Maximum rotation in degrees applied while the window travels, for a card-like feel. 0 disables rotation.</_long>
+            <default>3.0</default>
+            <min>0.0</min>
+            <max>45.0</max>
+        </option>
+        <option name="margin" type="int">
+            <_short>Clearance margin</_short>
+            <_long>Extra pixels the window travels beyond the edge of the windows covering it.</_long>
+            <default>24</default>
+            <min>0</min>
+        </option>
+    </plugin>
+</wayfire>
