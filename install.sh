@@ -25,6 +25,8 @@ LIBCAVA_REPO="https://github.com/LukashonakV/cava.git"
 LIBCAVA_TAG="0.10.7"
 GSR_REPO="https://repo.dec05eba.com/gpu-screen-recorder"
 GSR_COMMIT="e48be50"
+WCM_REPO="https://github.com/WayfireWM/wcm.git"
+WCM_TAG="v0.10.0"
 CAELESTIA_CLI_REPO="https://github.com/caelestia-dots/cli.git"
 CAELESTIA_CLI_COMMIT="eddee4dec"
 NERD_FONT_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/CascadiaCode.zip"
@@ -135,6 +137,22 @@ if [ "$SKIP_BUILDS" -eq 0 ]; then
         --prefix=/usr/local --buildtype=release
     ninja -C "$BUILD_DIR/wayfire-shift-switcher"
     sudo ninja -C "$BUILD_DIR/wayfire-shift-switcher" install
+
+    # --- WCM (Wayfire Config Manager) contra el wayfire de /usr/local ---------
+    # El wcm de Ubuntu lleva compilada la ruta /usr/share/wayfire/metadata, así
+    # que no ve los plugins del stack de /usr/local (shift-switcher, view-shot…).
+    if strings /usr/local/bin/wcm 2>/dev/null | grep -q "/usr/local/share/wayfire/metadata"; then
+        log "wcm ya instalado — omitiendo"
+    else
+        log "Compilando wcm $WCM_TAG"
+        rm -rf "$BUILD_DIR/wcm"
+        git clone --depth 1 --branch "$WCM_TAG" "$WCM_REPO" "$BUILD_DIR/wcm"
+        PKG_CONFIG_PATH=/usr/local/lib/x86_64-linux-gnu/pkgconfig meson setup \
+            "$BUILD_DIR/wcm/build" "$BUILD_DIR/wcm" \
+            --prefix=/usr/local --buildtype=release
+        ninja -C "$BUILD_DIR/wcm/build"
+        sudo ninja -C "$BUILD_DIR/wcm/build" install
+    fi
 
     # --- Quickshell -----------------------------------------------------------
     if /usr/local/bin/quickshell --version 2>/dev/null | grep -q "0\.3\.0"; then

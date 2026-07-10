@@ -64,3 +64,5 @@ libegl-dev
 libjpeg-dev
 libevdev-dev
 libboost-dev
+libgtkmm-3.0-dev
+libxkbregistry-dev
