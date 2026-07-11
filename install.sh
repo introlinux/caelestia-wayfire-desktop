@@ -262,6 +262,7 @@ done
 log "Instalando configuraciones en ~/.config"
 install_templated "$REPO/config/wayfire.ini"                      "$HOME/.config/wayfire.ini"
 install_templated "$REPO/config/environment.d/50-local-bin.conf"  "$HOME/.config/environment.d/50-local-bin.conf"
+install_templated "$REPO/config/environment.d/60-cursor.conf"     "$HOME/.config/environment.d/60-cursor.conf"
 backup "$HOME/.config/caelestia";  mkdir -p "$HOME/.config/caelestia"
 rsync -a "$REPO/config/caelestia/" "$HOME/.config/caelestia/"
 backup "$HOME/.config/gtk-3.0/settings.ini"; mkdir -p "$HOME/.config/gtk-3.0"
