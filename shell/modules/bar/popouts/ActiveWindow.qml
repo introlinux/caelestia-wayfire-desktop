@@ -85,6 +85,9 @@ Item {
 
         // Window thumbnail via Wayfire IPC (view-shot); falls back to the app
         // icon when the capture is unavailable (e.g. plugin not loaded).
+        // The previous capture of the app (per-app file in /tmp) is shown
+        // instantly while a fresh one is taken, double-buffered so the swap
+        // is a crossfade instead of a flash.
         Item {
             id: thumb
 
@@ -93,47 +96,104 @@ Item {
             height: 120
 
             property var thumbTarget: root.previewToplevel
-            onThumbTargetChanged: capture()
-            Component.onCompleted: capture()
+            property bool refreshQueued
+            property Image current: null
+
+            onThumbTargetChanged: refresh()
+            Component.onCompleted: refresh()
+
+            function fileFor(t): string {
+                const safeId = (t?.appId ?? "app").replace(/[^a-zA-Z0-9._-]/g, "_");
+                return `/tmp/caelestia-thumb-${safeId}.png`;
+            }
+
+            function refresh(): void {
+                if (!thumbTarget)
+                    return;
+                // Show the previous capture of this app right away (if any),
+                // then take a fresh one in the background
+                load("file://" + fileFor(thumbTarget));
+                captureDebounce.restart();
+            }
 
             function capture(): void {
-                const t = root.previewToplevel;
+                const t = thumbTarget;
                 if (!t)
                     return;
-                if (thumbProc.running)
-                    thumbProc.running = false;
-                const safeId = (t.appId ?? "app").replace(/[^a-zA-Z0-9._-]/g, "_");
-                thumbProc.command = [
-                    "caelestia-view-thumb",
-                    t.appId ?? "", t.title ?? "",
-                    `/tmp/caelestia-thumb-${safeId}.png`
-                ];
+                if (thumbProc.running) {
+                    refreshQueued = true;
+                    return;
+                }
+                thumbProc.command = ["caelestia-view-thumb", t.appId ?? "", t.title ?? "", fileFor(t)];
                 thumbProc.running = true;
+            }
+
+            // Load into the hidden image; the visible one (or the icon) stays
+            // up until the new file is ready
+            function load(url: string): void {
+                const next = current === imgA ? imgB : imgA;
+                next.source = "";
+                next.source = url;
+            }
+
+            Timer {
+                id: captureDebounce
+
+                // Also collapses hover churn: every capture stalls the
+                // compositor while view-shot encodes the PNG
+                interval: 150
+                onTriggered: thumb.capture()
             }
 
             Process {
                 id: thumbProc
+
                 running: false
                 stdout: SplitParser {
                     onRead: data => {
                         const file = data.trim();
-                        if (!file)
-                            return;
-                        // Force a reload even if the path is unchanged
-                        thumbImage.source = "";
-                        thumbImage.source = "file://" + file;
+                        // Drop captures that arrive after hovering another app
+                        if (file && file === thumb.fileFor(thumb.thumbTarget))
+                            thumb.load("file://" + file);
                     }
                 }
-                onExited: running = false
+                onExited: {
+                    running = false;
+                    if (thumb.refreshQueued) {
+                        thumb.refreshQueued = false;
+                        captureDebounce.restart();
+                    }
+                }
             }
 
-            Image {
-                id: thumbImage
+            component ThumbImage: Image {
                 anchors.fill: parent
                 fillMode: Image.PreserveAspectFit
                 cache: false
                 asynchronous: true
-                visible: status === Image.Ready
+                visible: opacity > 0
+                opacity: thumb.current === this && status === Image.Ready ? 1 : 0
+                onStatusChanged: {
+                    if (status === Image.Ready && thumb.current !== this)
+                        thumb.current = this;
+                    else if (status === Image.Error && thumb.current !== this)
+                        // No previous capture for this app: icon until one lands
+                        thumb.current = null;
+                }
+
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: 150
+                    }
+                }
+            }
+
+            ThumbImage {
+                id: imgA
+            }
+
+            ThumbImage {
+                id: imgB
             }
 
             CachingIconImage {
@@ -141,7 +201,7 @@ Item {
                 implicitSize: 96
                 width: 96
                 height: 96
-                visible: thumbImage.status !== Image.Ready
+                visible: thumb.current === null
                 source: Icons.getAppIcon(root.previewToplevel?.appId ?? "", "application-x-executable")
             }
         }
