@@ -1,0 +1,12 @@
+/* Barras de desplazamiento un poco más anchas que las de Adwaita */
+scrollbar slider {
+    min-width: 12px;
+    min-height: 12px;
+    border-radius: 12px;
+}
+
+/* Estado "indicador" (overlay sin ratón encima): el tema lo deja en ~3px */
+scrollbar.overlay-indicator:not(.hovering) slider {
+    min-width: 8px;
+    min-height: 8px;
+}
