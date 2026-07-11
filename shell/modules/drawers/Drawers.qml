@@ -22,6 +22,7 @@ Variants {
         DismissOverlay {
             screen: scope.modelData
             visibilities: content.visibilities
+            popouts: content.interactionWrapper.popouts
         }
 
         ContentWindow {

@@ -14,9 +14,12 @@ PanelWindow {
 
     required property ShellScreen screen
     required property DrawerVisibilities visibilities
+    // Popouts wrapper (panels.popouts): needed to dismiss the detached control
+    // center, which upstream closed with HyprlandFocusGrab (no Wayfire equivalent).
+    required property var popouts
 
     readonly property bool shouldShow: visibilities.launcher || visibilities.session ||
-                                       visibilities.sidebar
+                                       visibilities.sidebar || popouts.isDetached
 
     visible: shouldShow
 
@@ -37,6 +40,8 @@ PanelWindow {
         anchors.fill: parent
         acceptedButtons: Qt.AllButtons
         onClicked: {
+            if (root.popouts.isDetached)
+                root.popouts.close();
             root.visibilities.launcher = false;
             root.visibilities.session = false;
             root.visibilities.sidebar = false;

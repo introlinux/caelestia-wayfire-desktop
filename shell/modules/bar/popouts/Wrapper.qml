@@ -93,7 +93,10 @@ Item {
 
         target: QsWindow.window
         property: "WlrLayershell.keyboardFocus"
-        value: WlrKeyboardFocus.OnDemand
+        // Exclusive while detached: upstream relied on HyprlandFocusGrab to pull
+        // keyboard focus so Escape closes the control center; Wayfire has no
+        // focus-grab protocol, and OnDemand never receives focus here.
+        value: root.isDetached ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.OnDemand
     }
 
     Comp {
