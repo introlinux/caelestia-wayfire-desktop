@@ -19,6 +19,23 @@ recording_path: Path = _state_dir / "record/recording.mp4"
 recording_notif_path: Path = _state_dir / "record/notifid.txt"
 
 RECORDER = "gpu-screen-recorder"
+COUNTDOWN_SECS = 3
+projector_sound = Path.home() / "caelestia-wayfire/assets/sound-projector.mp3"
+
+
+def countdown() -> None:
+    """Visual 3-2-1 countdown on the shell plus old-projector sound.
+
+    Sleeps slightly longer than the sound (~3.1s) so its tail does not
+    end up in the recording when capturing desktop audio.
+    """
+    subprocess.Popen(["qs", "-c", "caelestia", "ipc", "call", "record",
+                      "countdown", str(COUNTDOWN_SECS)],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if projector_sound.exists():
+        subprocess.Popen(["pw-play", str(projector_sound)],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(COUNTDOWN_SECS + 0.2)
 
 
 def notify(*args: str) -> str:
@@ -97,8 +114,13 @@ def do_start(args: argparse.Namespace) -> None:
 
     if args.region:
         if args.region == "slurp":
+            # stdin=DEVNULL is load-bearing: with a non-tty stdin (quickshell
+            # gives its children a never-closing pipe) slurp blocks reading
+            # boxes from stdin before even connecting to the compositor
             region = subprocess.check_output(
-                ["slurp", "-f", "%wx%h+%x+%y"], text=True).strip()
+                ["slurp", "-d", "-w", "2", "-b", "#00000066", "-c", "#ffffffdd",
+                 "-f", "%wx%h+%x+%y"],
+                text=True, stdin=subprocess.DEVNULL).strip()
         else:
             region = args.region.strip()
         gsr_args += ["region", "-region", region]
@@ -131,6 +153,8 @@ def do_start(args: argparse.Namespace) -> None:
             gsr_args += config["record"]["extraArgs"]
     except Exception:
         pass
+
+    countdown()
 
     recording_path.parent.mkdir(parents=True, exist_ok=True)
     proc = subprocess.Popen(

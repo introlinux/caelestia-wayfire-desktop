@@ -20,6 +20,8 @@ ShellRoot {
     // }
 
     ConfigToasts {}
+    RecordCountdown {}
+    ScreenshotIpc {}
     Shortcuts {}
     BatteryMonitor {}
     // IdleMonitors {
