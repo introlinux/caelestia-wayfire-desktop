@@ -67,7 +67,7 @@ CustomMouseArea {
     function inMiniAppsArea(x: real, y: real): bool {
         const p = panels.miniapps;
         const panelHeight = (p.offsetScale ?? 1) < 1 ? p.height : 0; // qmllint disable missing-property
-        return y > height - Config.border.minThickness - panelHeight && x < bar.implicitWidth + p.x + p.width + Config.border.rounding;
+        return y > height - Config.border.minThickness - panelHeight && x > bar.implicitWidth && x < bar.implicitWidth + p.x + p.width + Config.border.rounding;
     }
 
     function inLauncherArea(x: real, y: real): bool {
