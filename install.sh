@@ -246,6 +246,12 @@ log "Copiando Caelestia Shell a ~/caelestia-wayfire"
 backup "$HOME/caelestia-wayfire"
 rsync -a --delete --exclude 'build*' "$REPO/shell/" "$HOME/caelestia-wayfire/"
 
+# El CLI `caelestia` habla con el shell vía `qs -c caelestia`, que busca una
+# config LLAMADA "caelestia" en ~/.config/quickshell. Enlazamos el shell ahí y
+# caelestia-wayfire-start lo arranca con ese mismo nombre.
+mkdir -p "$HOME/.config/quickshell"
+ln -sfn "$HOME/caelestia-wayfire" "$HOME/.config/quickshell/caelestia"
+
 log "Instalando scripts en ~/.local/bin"
 mkdir -p "$HOME/.local/bin"
 for f in "$REPO/bin/"*; do
