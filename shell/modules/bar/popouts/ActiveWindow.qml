@@ -171,20 +171,13 @@ Item {
                 fillMode: Image.PreserveAspectFit
                 cache: false
                 asynchronous: true
-                visible: opacity > 0
-                opacity: thumb.current === this && status === Image.Ready ? 1 : 0
+                visible: thumb.current === this && status === Image.Ready
                 onStatusChanged: {
                     if (status === Image.Ready && thumb.current !== this)
                         thumb.current = this;
                     else if (status === Image.Error && thumb.current !== this)
                         // No previous capture for this app: icon until one lands
                         thumb.current = null;
-                }
-
-                Behavior on opacity {
-                    NumberAnimation {
-                        duration: 150
-                    }
                 }
             }
 
