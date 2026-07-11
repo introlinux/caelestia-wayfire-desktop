@@ -90,12 +90,17 @@ if [ "$SKIP_BUILDS" -eq 0 ]; then
     # Se instala en /usr/local, que tiene prioridad en el PATH de la sesión GDM
     # sobre el paquete de Ubuntu. Necesario para wayfire-plugins-extra (view-shot,
     # extra-animations), que no está empaquetado en Ubuntu.
-    if /usr/local/bin/wayfire --version 2>/dev/null | grep -q "^0\.10\.1"; then
-        log "Wayfire 0.10.1 ya instalado en /usr/local — omitiendo"
+    # El marcador dnd_dwell en scale.xml distingue un 0.10.1 con nuestro parche
+    # de scale (hover focus + drag-and-drop) de uno de stock.
+    if /usr/local/bin/wayfire --version 2>/dev/null | grep -q "^0\.10\.1" &&
+       grep -q dnd_dwell /usr/local/share/wayfire/metadata/scale.xml 2>/dev/null; then
+        log "Wayfire 0.10.1 (parcheado) ya instalado en /usr/local — omitiendo"
     else
         log "Compilando Wayfire $WAYFIRE_TAG"
         rm -rf "$BUILD_DIR/wayfire"
         git clone --depth 1 --branch "$WAYFIRE_TAG" "$WAYFIRE_REPO" "$BUILD_DIR/wayfire"
+        log "Aplicando parche de scale (hover focus + drag-and-drop)"
+        git -C "$BUILD_DIR/wayfire" apply "$REPO/patches/wayfire-scale-hover-dnd.patch"
         meson setup "$BUILD_DIR/wayfire/build" "$BUILD_DIR/wayfire" \
             --prefix=/usr/local --buildtype=release \
             -Duse_system_wlroots=enabled -Duse_system_wfconfig=enabled -Dtests=disabled
