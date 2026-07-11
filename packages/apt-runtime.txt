@@ -1,5 +1,6 @@
 # Compositor y utilidades Wayland
 wayfire
+hyprpolkitagent
 wcm
 wstroke
 xdg-desktop-portal-wlr
