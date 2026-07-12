@@ -28,7 +28,7 @@ Item {
         height: 350
         radius: Tokens.rounding.large
         color: Colours.tPalette.m3surfaceContainer
-        visible: !Config.dashboard.performance.showCpu && !(Config.dashboard.performance.showGpu && SystemUsage.gpuType !== "NONE") && !Config.dashboard.performance.showMemory && !Config.dashboard.performance.showStorage && !Config.dashboard.performance.showNetwork && !(UPower.displayDevice.isLaptopBattery && Config.dashboard.performance.showBattery)
+        visible: !Config.dashboard.performance.showCpu && !(Config.dashboard.performance.showGpu && SystemUsage.gpus.length > 0) && !Config.dashboard.performance.showMemory && !Config.dashboard.performance.showStorage && !Config.dashboard.performance.showNetwork && !(UPower.displayDevice.isLaptopBattery && Config.dashboard.performance.showBattery)
 
         ColumnLayout {
             anchors.centerIn: parent
@@ -78,7 +78,7 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Tokens.spacing.normal
-                visible: Config.dashboard.performance.showCpu || (Config.dashboard.performance.showGpu && SystemUsage.gpuType !== "NONE")
+                visible: Config.dashboard.performance.showCpu || (Config.dashboard.performance.showGpu && SystemUsage.gpus.length > 0)
 
                 HeroCard {
                     Layout.fillWidth: true
@@ -96,20 +96,27 @@ Item {
                     accentColor: Colours.palette.m3primary
                 }
 
-                HeroCard {
-                    Layout.fillWidth: true
-                    Layout.minimumWidth: 400
-                    Layout.preferredHeight: 150
-                    visible: Config.dashboard.performance.showGpu && SystemUsage.gpuType !== "NONE"
-                    icon: "desktop_windows"
-                    title: SystemUsage.gpuName ? `GPU - ${SystemUsage.gpuName}` : qsTr("GPU")
-                    mainValue: `${Math.round(SystemUsage.gpuPerc * 100)}%`
-                    mainLabel: qsTr("Usage")
-                    secondaryValue: root.displayTemp(SystemUsage.gpuTemp)
-                    secondaryLabel: qsTr("Temp")
-                    usage: SystemUsage.gpuPerc
-                    temperature: SystemUsage.gpuTemp
-                    accentColor: Colours.palette.m3secondary
+                Repeater {
+                    model: Config.dashboard.performance.showGpu ? SystemUsage.gpus : []
+
+                    HeroCard {
+                        required property int index
+                        required property var modelData
+                        readonly property var stats: SystemUsage.gpuData[index] ?? ({})
+
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: SystemUsage.gpus.length > 1 ? 300 : 400
+                        Layout.preferredHeight: 150
+                        icon: "desktop_windows"
+                        title: modelData.name ? `GPU - ${modelData.name}` : qsTr("GPU")
+                        mainValue: stats.usage != null ? `${Math.round(stats.usage * 100)}%` : "—"
+                        mainLabel: qsTr("Usage")
+                        secondaryValue: stats.temp != null ? root.displayTemp(stats.temp) : "—"
+                        secondaryLabel: qsTr("Temp")
+                        usage: stats.usage ?? 0
+                        temperature: stats.temp ?? 0
+                        accentColor: Colours.palette.m3secondary
+                    }
                 }
             }
 

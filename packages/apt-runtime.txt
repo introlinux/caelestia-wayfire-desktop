@@ -21,6 +21,18 @@ libnotify-bin
 brightnessctl
 ddcutil
 lm-sensors
+# --- Monitoreo de GPU (bin/caelestia-gpu-stats, dashboard de rendimiento) ---
+# pciutils aporta lspci (nombres de las tarjetas); python3 ya viene en la base.
+pciutils
+# Intel (i915/xe) se lee de fdinfo DRM y AMD de sysfs: no necesitan nada más.
+# NVIDIA solo da uso/temperatura con el driver propietario (trae nvidia-smi);
+# con nouveau la tarjeta aparece sin métricas. Instalarlo a mano, p. ej.:
+#   sudo ubuntu-drivers install        # o: sudo apt install nvidia-driver-595-open
+# --- Grabación de pantalla (gpu-screen-recorder) ---
+# Codificador VAAPI para iGPU Intel Gen11+ (Ice Lake incluido); sin él,
+# gpu-screen-recorder muere con "vaInitialize failed". El i965-va-driver
+# clásico solo cubre Intel antiguas. Diagnóstico: vainfo (paquete libva-utils).
+intel-media-va-driver-non-free
 # Audio
 pipewire
 pipewire-pulse

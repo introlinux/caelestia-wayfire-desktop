@@ -13,12 +13,13 @@ Singleton {
     property real cpuPerc
     property real cpuTemp
 
-    // GPU properties
-    readonly property string gpuType: GlobalConfig.services.gpuType.toUpperCase() || autoGpuType
-    property string autoGpuType: "NONE"
-    property string gpuName: ""
-    property real gpuPerc
-    property real gpuTemp
+    // GPU properties: listas paralelas alimentadas por caelestia-gpu-stats.
+    // gpus (name/vendor) solo se reasigna si cambia la topología, para que los
+    // Repeater de la UI no recreen sus delegados en cada refresco; gpuData
+    // ({usage: 0-1 | null, temp: °C | null}) se reasigna en cada muestra.
+    // GlobalConfig.services.gpuType filtra por vendor (nvidia/amd/intel; "none" oculta).
+    property var gpus: []
+    property var gpuData: []
 
     // Memory properties
     property real memUsed
@@ -46,10 +47,6 @@ Singleton {
 
     function cleanCpuName(name: string): string {
         return name.replace(/\(R\)|\(TM\)|CPU|\d+(?:th|nd|rd|st) Gen |Core |Processor/gi, "").replace(/\s+/g, " ").trim();
-    }
-
-    function cleanGpuName(name: string): string {
-        return name.replace(/\(R\)|\(TM\)|Graphics/gi, "").replace(/\s+/g, " ").trim();
     }
 
     function formatKib(kib: real): var {
@@ -87,7 +84,7 @@ Singleton {
             stat.reload();
             meminfo.reload();
             storage.running = true;
-            gpuUsage.running = true;
+            gpuStats.running = true;
             sensors.running = true;
         }
     }
@@ -215,67 +212,36 @@ Singleton {
         }
     }
 
-    // GPU name detection (one-time)
     Process {
-        id: gpuNameDetect
+        id: gpuStats
 
-        running: true
-        command: ["sh", "-c", "nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || glxinfo -B 2>/dev/null | grep 'Device:' | cut -d':' -f2 | cut -d'(' -f1 || lspci 2>/dev/null | grep -i 'vga\\|3d controller\\|display' | head -1"]
+        command: ["caelestia-gpu-stats"]
         stdout: StdioCollector {
             onStreamFinished: {
-                const output = text.trim();
-                if (!output)
+                let list;
+                try {
+                    list = JSON.parse(text);
+                } catch (e) {
                     return;
-
-                // Check if it's from nvidia-smi (clean GPU name)
-                if (output.toLowerCase().includes("nvidia") || output.toLowerCase().includes("geforce") || output.toLowerCase().includes("rtx") || output.toLowerCase().includes("gtx")) {
-                    root.gpuName = root.cleanGpuName(output);
-                } else if (output.toLowerCase().includes("rx")) {
-                    root.gpuName = root.cleanGpuName(output);
-                } else {
-                    // Parse lspci output: extract name from brackets or after colon
-                    // Handles cases like [AMD/ATI] Navi 21 [Radeon RX 6800/6800 XT / 6900 XT] (rev c0)
-                    const bracketMatch = output.match(/\[([^\]]+)\][^\[]*$/);
-                    if (bracketMatch) {
-                        root.gpuName = root.cleanGpuName(bracketMatch[1]);
-                    } else {
-                        const colonMatch = output.match(/:\s*(.+)/);
-                        if (colonMatch)
-                            root.gpuName = root.cleanGpuName(colonMatch[1]);
-                    }
                 }
-            }
-        }
-    }
 
-    Process {
-        id: gpuTypeCheck
+                const filter = (GlobalConfig.services.gpuType || "").toLowerCase();
+                if (filter === "none")
+                    list = [];
+                else if (["nvidia", "amd", "intel"].includes(filter))
+                    list = list.filter(g => g.vendor === filter);
 
-        running: !GlobalConfig.services.gpuType
-        command: ["sh", "-c", "if command -v nvidia-smi &>/dev/null && nvidia-smi -L &>/dev/null; then echo NVIDIA; elif ls /sys/class/drm/card*/device/gpu_busy_percent 2>/dev/null | grep -q .; then echo GENERIC; else echo NONE; fi"]
-        stdout: StdioCollector {
-            onStreamFinished: root.autoGpuType = text.trim()
-        }
-    }
+                root.gpuData = list.map(g => ({
+                    usage: g.usage !== null ? g.usage / 100 : null,
+                    temp: g.temp
+                }));
 
-    Process {
-        id: gpuUsage
-
-        command: root.gpuType === "GENERIC" ? ["sh", "-c", "cat /sys/class/drm/card*/device/gpu_busy_percent"] : root.gpuType === "NVIDIA" ? ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"] : ["echo"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (root.gpuType === "GENERIC") {
-                    const percs = text.trim().split("\n");
-                    const sum = percs.reduce((acc, d) => acc + parseInt(d, 10), 0);
-                    root.gpuPerc = sum / percs.length / 100;
-                } else if (root.gpuType === "NVIDIA") {
-                    const [usage, temp] = text.trim().split(",");
-                    root.gpuPerc = parseInt(usage, 10) / 100;
-                    root.gpuTemp = parseInt(temp, 10);
-                } else {
-                    root.gpuPerc = 0;
-                    root.gpuTemp = 0;
-                }
+                const names = list.map(g => ({
+                    name: g.name,
+                    vendor: g.vendor
+                }));
+                if (JSON.stringify(names) !== JSON.stringify(root.gpus))
+                    root.gpus = names;
             }
         }
     }
@@ -297,33 +263,6 @@ Singleton {
 
                 if (cpuTemp)
                     root.cpuTemp = parseFloat(cpuTemp[1]);
-
-                if (root.gpuType !== "GENERIC")
-                    return;
-
-                let eligible = false;
-                let sum = 0;
-                let count = 0;
-
-                for (const line of text.trim().split("\n")) {
-                    if (line === "Adapter: PCI adapter")
-                        eligible = true;
-                    else if (line === "")
-                        eligible = false;
-                    else if (eligible) {
-                        let match = line.match(/^(temp[0-9]+|GPU core|edge)+:\s+\+([0-9]+\.[0-9]+)(°| )C/);
-                        if (!match)
-                            // Fall back to junction/mem if GPU doesn't have edge temp (for AMD GPUs)
-                            match = line.match(/^(junction|mem)+:\s+\+([0-9]+\.[0-9]+)(°| )C/);
-
-                        if (match) {
-                            sum += parseFloat(match[2]);
-                            count++;
-                        }
-                    }
-                }
-
-                root.gpuTemp = count > 0 ? sum / count : 0;
             }
         }
     }

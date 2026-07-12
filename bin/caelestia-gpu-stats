@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+# Métricas unificadas de todas las GPUs del sistema, en JSON:
+#   [{"name": str, "vendor": "nvidia"|"amd"|"intel"|str, "usage": 0-100|null, "temp": °C|null}]
+# usage/temp son null cuando el driver no expone esa métrica (la UI muestra "—").
+# Backends: nvidia-smi (propietario), amdgpu (sysfs), i915/xe (fdinfo DRM
+# muestreado ~350ms, solo ve clientes del propio usuario), nouveau (hwmon).
+
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+SAMPLE_MS = 350
+
+
+def read(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def read_int(path):
+    v = read(path)
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def nvidia_gpus():
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,utilization.gpu,temperature.gpu",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    if out.returncode != 0:
+        return []
+    gpus = []
+    for line in out.stdout.strip().splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 3:
+            continue
+
+        def num(s):
+            try:
+                return float(s)
+            except ValueError:
+                return None
+        gpus.append({"name": parts[0], "vendor": "nvidia",
+                     "usage": num(parts[1]), "temp": num(parts[2])})
+    return gpus
+
+
+def hwmon_temp(dev):
+    """Temperatura del hwmon propio del dispositivo (edge/GPU core preferidos)."""
+    best = None
+    for hw in glob.glob(os.path.join(dev, "hwmon/hwmon*")):
+        for tf in sorted(glob.glob(os.path.join(hw, "temp*_input"))):
+            v = read_int(tf)
+            if v is None:
+                continue
+            v /= 1000
+            label = (read(tf.replace("_input", "_label")) or "").lower()
+            if label in ("edge", "gpu core", "junction"):
+                return v
+            if best is None:
+                best = v
+    return best
+
+
+def coretemp_package():
+    """Temperatura de paquete de la CPU (la iGPU Intel comparte die)."""
+    for hw in glob.glob("/sys/class/hwmon/hwmon*"):
+        if read(os.path.join(hw, "name")) == "coretemp":
+            v = read_int(os.path.join(hw, "temp1_input"))
+            if v is not None:
+                return v / 1000
+    return None
+
+
+def pci_name(pdev):
+    try:
+        out = subprocess.run(["lspci", "-s", pdev], capture_output=True,
+                             text=True, timeout=5).stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return ""
+    if ":" not in out:
+        return ""
+    name = out.split(":", 2)[-1].strip()
+    # "TU117M [GeForce GTX 1650 Mobile / Max-Q]" -> lo de dentro del corchete
+    m = re.search(r"\[([^]]+)\]", name)
+    if m:
+        name = m.group(1)
+    name = re.sub(r"\s*\(rev [^)]*\)$", "", name)
+    name = re.sub(r"^(Intel|NVIDIA|AMD|ATI) (Corporation |Technologies )?", "", name)
+    return name.strip()
+
+
+def drm_engine_sample(driver, pdev):
+    """{client_id: {engine: ns_acumulados}} de los fd DRM legibles (mismo usuario)."""
+    clients = {}
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        fd_dir = f"/proc/{pid}/fd"
+        try:
+            fds = os.listdir(fd_dir)
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                if not os.readlink(f"{fd_dir}/{fd}").startswith("/dev/dri/"):
+                    continue
+            except OSError:
+                continue
+            info = {}
+            try:
+                with open(f"/proc/{pid}/fdinfo/{fd}") as f:
+                    for line in f:
+                        if line.startswith("drm-"):
+                            k, _, v = line.partition(":")
+                            info[k.strip()] = v.strip()
+            except OSError:
+                continue
+            if info.get("drm-driver") != driver:
+                continue
+            if info.get("drm-pdev", pdev) != pdev:
+                continue
+            cid = info.get("drm-client-id")
+            if cid is None:
+                continue
+            engines = {}
+            for k, v in info.items():
+                if k.startswith("drm-engine-"):
+                    try:
+                        engines[k] = int(v.split()[0])
+                    except ValueError:
+                        pass
+            if engines:
+                clients[cid] = engines
+    return clients
+
+
+def fdinfo_busy(driver, pdev, before, after, dt_ns):
+    """% de uso: máximo entre clases de motor de la suma de deltas por cliente."""
+    totals = {}
+    for cid, engines in after.items():
+        prev = before.get(cid)
+        if not prev:
+            continue
+        for engine, ns in engines.items():
+            delta = ns - prev.get(engine, ns)
+            if delta > 0:
+                totals[engine] = totals.get(engine, 0) + delta
+    if not totals or dt_ns <= 0:
+        return 0.0
+    return min(100.0, max(totals.values()) * 100.0 / dt_ns)
+
+
+def main():
+    gpus = nvidia_gpus()
+
+    cards = [c for c in glob.glob("/sys/class/drm/card*")
+             if re.fullmatch(r"card\d+", os.path.basename(c))]
+    fdinfo_cards = []  # (índice en gpus, driver, pdev)
+    for card in sorted(cards):
+        dev = os.path.join(card, "device")
+        try:
+            drv = os.path.basename(os.path.realpath(os.path.join(dev, "driver")))
+            pdev = os.path.basename(os.path.realpath(dev))
+        except OSError:
+            continue
+        if drv == "nvidia":
+            continue  # ya cubierta por nvidia-smi
+        entry = {"name": pci_name(pdev) or f"GPU ({drv})", "vendor": drv,
+                 "usage": None, "temp": hwmon_temp(dev)}
+        if drv == "amdgpu":
+            entry["vendor"] = "amd"
+            busy = read_int(os.path.join(dev, "gpu_busy_percent"))
+            entry["usage"] = float(busy) if busy is not None else None
+        elif drv in ("i915", "xe"):
+            entry["vendor"] = "intel"
+            if entry["temp"] is None:
+                entry["temp"] = coretemp_package()
+            fdinfo_cards.append((len(gpus), drv, pdev))
+        elif drv == "nouveau":
+            entry["vendor"] = "nvidia"
+        gpus.append(entry)
+
+    if fdinfo_cards:
+        before = {(d, p): drm_engine_sample(d, p) for _, d, p in fdinfo_cards}
+        t0 = time.monotonic_ns()
+        time.sleep(SAMPLE_MS / 1000)
+        dt = time.monotonic_ns() - t0
+        for idx, drv, pdev in fdinfo_cards:
+            after = drm_engine_sample(drv, pdev)
+            gpus[idx]["usage"] = round(
+                fdinfo_busy(drv, pdev, before[(drv, pdev)], after, dt), 1)
+
+    json.dump(gpus, sys.stdout)
+    print()
+
+
+if __name__ == "__main__":
+    main()

@@ -12,8 +12,8 @@ SectionContainer {
     id: root
 
     required property var rootItem
-    // GPU toggle is hidden when gpuType is "NONE" (no GPU data available)
-    readonly property bool gpuAvailable: SystemUsage.gpuType !== "NONE"
+    // GPU toggle is hidden when no GPU reports data
+    readonly property bool gpuAvailable: SystemUsage.gpus.length > 0
     // Battery toggle is hidden when no laptop battery is present
     readonly property bool batteryAvailable: UPower.displayDevice.isLaptopBattery
 
