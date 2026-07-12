@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Control genérico de frecuencia de CPU para Caelestia (aplica a TODOS los
+# núcleos por igual). `status` no necesita root y emite JSON; `set-max` y
+# `turbo` escriben en sysfs y se invocan con `sudo -n` desde el shell gracias
+# a la regla NOPASSWD que install.sh deja en /etc/sudoers.d/caelestia-cpufreq
+# apuntando a la copia propiedad de root en /usr/local/bin (nunca a la de
+# ~/.local/bin, que el usuario puede editar).
+set -euo pipefail
+
+CPU=/sys/devices/system/cpu
+# Con intel_pstate, cpuinfo_max_freq baja a la frecuencia base al apagar el
+# turbo: el máximo REAL del hardware se cachea (como root) mientras el turbo
+# está activo, que es el estado tras cada arranque.
+CACHE=/var/lib/caelestia/cpufreq-hwmax
+read -r hw_min < "$CPU/cpu0/cpufreq/cpuinfo_min_freq"
+
+turbo_on() {
+    if [[ -e $CPU/intel_pstate/no_turbo ]]; then
+        [[ $(< "$CPU/intel_pstate/no_turbo") == 0 ]]
+    elif [[ -e $CPU/cpufreq/boost ]]; then
+        [[ $(< "$CPU/cpufreq/boost") == 1 ]]
+    fi
+}
+
+hw_max_now=$(< "$CPU/cpu0/cpufreq/cpuinfo_max_freq")
+cached=0
+[[ -r $CACHE ]] && read -r cached < "$CACHE"
+if turbo_on; then
+    hw_max=$hw_max_now
+    if (( hw_max != cached )) && [[ $(id -u) == 0 ]]; then
+        mkdir -p "$(dirname "$CACHE")"
+        printf '%s\n' "$hw_max" > "$CACHE"
+        chmod 644 "$CACHE"
+    fi
+else
+    hw_max=$(( cached > hw_max_now ? cached : hw_max_now ))
+fi
+
+status() {
+    local cur=0 max base=0 turbo=true f v
+    for f in "$CPU"/cpu*/cpufreq/scaling_cur_freq; do
+        read -r v < "$f"
+        (( v > cur )) && cur=$v
+    done
+    read -r max < "$CPU/cpu0/cpufreq/scaling_max_freq"
+    [[ -e $CPU/cpu0/cpufreq/base_frequency ]] && read -r base < "$CPU/cpu0/cpufreq/base_frequency"
+    if [[ -e $CPU/intel_pstate/no_turbo ]]; then
+        [[ $(< "$CPU/intel_pstate/no_turbo") == 1 ]] && turbo=false
+    elif [[ -e $CPU/cpufreq/boost ]]; then
+        [[ $(< "$CPU/cpufreq/boost") == 0 ]] && turbo=false
+    fi
+    printf '{"cur":%d,"max":%d,"base":%d,"hwMin":%d,"hwMax":%d,"turbo":%s}\n' \
+        "$cur" "$max" "$base" "$hw_min" "$hw_max" "$turbo"
+}
+
+case "${1:-}" in
+status)
+    status
+    ;;
+set-max)
+    khz=${2:?uso: caelestia-cpufreq set-max <kHz>}
+    [[ $khz =~ ^[0-9]+$ ]] || { echo "kHz inválidos: $khz" >&2; exit 1; }
+    (( khz < hw_min )) && khz=$hw_min
+    (( khz > hw_max )) && khz=$hw_max
+    for f in "$CPU"/cpu*/cpufreq/scaling_max_freq; do
+        echo "$khz" > "$f"
+    done
+    ;;
+turbo)
+    case "${2:-}" in
+    on)  no_turbo=0 ;;
+    off) no_turbo=1 ;;
+    *)   echo "uso: caelestia-cpufreq turbo on|off" >&2; exit 1 ;;
+    esac
+    if [[ -e $CPU/intel_pstate/no_turbo ]]; then
+        echo "$no_turbo" > "$CPU/intel_pstate/no_turbo"
+    elif [[ -e $CPU/cpufreq/boost ]]; then
+        echo $(( 1 - no_turbo )) > "$CPU/cpufreq/boost"
+    else
+        echo "este sistema no expone control de turbo/boost" >&2
+        exit 1
+    fi
+    ;;
+*)
+    echo "uso: caelestia-cpufreq status | set-max <kHz> | turbo on|off" >&2
+    exit 1
+    ;;
+esac

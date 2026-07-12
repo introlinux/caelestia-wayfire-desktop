@@ -110,6 +110,11 @@ Item {
         }
 
         Popout {
+            name: "cpufreq"
+            sourceComponent: CpuFreq {}
+        }
+
+        Popout {
             name: "audio"
             sourceComponent: Audio {
                 popouts: root.popouts

@@ -230,6 +230,20 @@ StyledRect {
             }
         }
 
+        // CPU frequency icon (visible si el sistema expone cpufreq;
+        // relleno + color de aviso cuando hay un tope activo)
+        WrappedLoader {
+            name: "cpufreq"
+            active: CpuFreq.available
+
+            sourceComponent: MaterialIcon {
+                animate: true
+                text: CpuFreq.limited ? "thermometer_loss" : "speed"
+                color: CpuFreq.limited ? Colours.palette.m3tertiary : root.colour
+                fill: CpuFreq.limited ? 1 : 0
+            }
+        }
+
         // Battery icon
         WrappedLoader {
             name: "battery"

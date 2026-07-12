@@ -272,6 +272,22 @@ for f in "$REPO/bin/"*; do
     chmod +x "$HOME/.local/bin/$(basename "$f")"
 done
 
+# El control de frecuencia de CPU de la barra escribe en sysfs como root. La
+# copia de /usr/local/bin (propiedad de root, NO editable por el usuario) es la
+# única autorizada en sudoers; el shell la invoca con `sudo -n`. No apuntar
+# nunca la regla a ~/.local/bin: sería escalada de privilegios trivial.
+log "Instalando caelestia-cpufreq (helper root + regla sudoers)"
+sudo install -o root -g root -m 755 "$REPO/bin/caelestia-cpufreq" /usr/local/bin/caelestia-cpufreq
+printf '%s ALL=(root) NOPASSWD: /usr/local/bin/caelestia-cpufreq\n' "$USER" \
+    | sudo tee /etc/sudoers.d/caelestia-cpufreq >/dev/null
+sudo chmod 440 /etc/sudoers.d/caelestia-cpufreq
+if ! sudo visudo -cf /etc/sudoers.d/caelestia-cpufreq >/dev/null; then
+    sudo rm -f /etc/sudoers.d/caelestia-cpufreq
+    warn "Regla sudoers inválida — el control de frecuencia no tendrá permisos"
+fi
+# Ceba la caché del máximo real del hardware (ver comentario en el helper)
+sudo /usr/local/bin/caelestia-cpufreq status >/dev/null
+
 log "Instalando configuraciones en ~/.config"
 install_templated "$REPO/config/wayfire.ini"                      "$HOME/.config/wayfire.ini"
 install_templated "$REPO/config/environment.d/50-local-bin.conf"  "$HOME/.config/environment.d/50-local-bin.conf"
