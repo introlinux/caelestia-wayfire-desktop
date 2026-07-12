@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""Toggle mosaic layout for the current workspace's windows.
+
+First press: saves each window's floating geometry and arranges all of them
+in a gapped grid filling the output's workarea. Second press: restores the
+saved geometries. Windows remain floating the whole time — this only uses
+ipc-rules (list-views / configure-view), the simple-tile plugin is NOT needed.
+
+Both transitions are animated client-side: the script interpolates every
+window's geometry with an ease-out curve over ANIM_MS, driving one
+configure-view per window per frame through a single persistent IPC
+connection. Set ANIM_MS = 0 for instant placement.
+
+State lives in $XDG_RUNTIME_DIR/caelestia-tile-toggle.<output>.<wsx>x<wsy>.json
+(one file per output+workspace, so each workspace toggles independently).
+
+Windows opened after tiling are untouched by the restore step; fullscreen
+views are skipped entirely.
+
+Usage: wayfire-tile-toggle
+"""
+import glob
+import json
+import math
+import os
+import socket
+import struct
+import sys
+import time
+
+GAP = 8          # px between windows and against the workarea edges
+ANIM_MS = 300    # transition length; 0 disables the animation
+FRAME_MS = 16    # target time per animation frame (~60 fps)
+
+
+class Ipc:
+    """Persistent connection to the Wayfire IPC socket."""
+
+    def __init__(self, sock_path):
+        self.s = socket.socket(socket.AF_UNIX)
+        self.s.connect(sock_path)
+
+    def call(self, method, data=None):
+        payload = {'method': method}
+        if data is not None:
+            payload['data'] = data
+        msg = json.dumps(payload).encode()
+        self.s.send(struct.pack('<I', len(msg)) + msg)
+        n = struct.unpack('<I', self.s.recv(4))[0]
+        resp = b''
+        while len(resp) < n:
+            resp += self.s.recv(n - len(resp))
+        return json.loads(resp)
+
+
+def find_socket():
+    sock = os.environ.get('WAYFIRE_SOCKET', '')
+    if sock:
+        return sock
+    sockets = glob.glob(f'/run/user/{os.getuid()}/wayfire*.socket')
+    if not sockets:
+        sys.exit('wayfire-tile-toggle: no Wayfire IPC socket found')
+    return sockets[0]
+
+
+def focused_output(ipc):
+    try:
+        out = ipc.call('window-rules/get-focused-output')
+        if 'id' in out:
+            return out
+    except Exception:
+        pass
+    outs = ipc.call('window-rules/list-outputs')
+    if not outs:
+        sys.exit('wayfire-tile-toggle: no outputs')
+    return outs[0]
+
+
+def views_on_current_ws(ipc, out):
+    """Toplevels whose center lies inside the current workspace viewport.
+
+    View geometries from the IPC are output-local with the *current*
+    workspace occupying [0,w)x[0,h)."""
+    ow = out['geometry']['width']
+    oh = out['geometry']['height']
+    result = []
+    for v in ipc.call('window-rules/list-views'):
+        if v.get('role') != 'toplevel' or not v.get('mapped'):
+            continue
+        if v.get('minimized') or v.get('fullscreen'):
+            continue
+        if v.get('output-name') != out['name']:
+            continue
+        g = v['geometry']
+        cx = g['x'] + g['width'] / 2
+        cy = g['y'] + g['height'] / 2
+        if 0 <= cx < ow and 0 <= cy < oh:
+            result.append(v)
+    return result
+
+
+def mosaic_rects(workarea, n):
+    """Split the workarea into n gapped cells, row-major, balanced grid.
+    Cells in a short last row widen to fill the full row."""
+    cols = math.ceil(math.sqrt(n))
+    rows = math.ceil(n / cols)
+    wa_x = workarea['x'] + GAP
+    wa_y = workarea['y'] + GAP
+    wa_w = workarea['width'] - 2 * GAP
+    wa_h = workarea['height'] - 2 * GAP
+    cell_h = (wa_h - (rows - 1) * GAP) // rows
+    rects = []
+    for row in range(rows):
+        in_row = min(cols, n - row * cols)
+        cell_w = (wa_w - (in_row - 1) * GAP) // in_row
+        y = wa_y + row * (cell_h + GAP)
+        for col in range(in_row):
+            rects.append({
+                'x': wa_x + col * (cell_w + GAP),
+                'y': y,
+                'width': cell_w,
+                'height': cell_h,
+            })
+    return rects
+
+
+def apply_geometries(ipc, moves):
+    """Animate each view in `moves` [(id, from_geom, to_geom)] to its target."""
+    if ANIM_MS <= 0:
+        for vid, _src, dst in moves:
+            ipc.call('window-rules/configure-view', {'id': vid, 'geometry': dst})
+        return
+
+    start = time.monotonic()
+    while True:
+        t = (time.monotonic() - start) * 1000 / ANIM_MS
+        last = t >= 1.0
+        # ease-out cubic: fast start, gentle landing
+        k = 1.0 if last else 1 - (1 - t) ** 3
+        for vid, src, dst in moves:
+            geom = dst if last else {
+                key: round(src[key] + (dst[key] - src[key]) * k)
+                for key in ('x', 'y', 'width', 'height')
+            }
+            ipc.call('window-rules/configure-view', {'id': vid, 'geometry': geom})
+        if last:
+            return
+        elapsed = (time.monotonic() - start) * 1000
+        next_frame = math.ceil(elapsed / FRAME_MS) * FRAME_MS
+        time.sleep(max(0.0, (next_frame - elapsed) / 1000))
+
+
+def main():
+    ipc = Ipc(find_socket())
+    out = focused_output(ipc)
+    ws = out['workspace']
+    runtime = os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')
+    state_path = os.path.join(
+        runtime, f"caelestia-tile-toggle.{out['name']}.{ws['x']}x{ws['y']}.json")
+
+    views = views_on_current_ws(ipc, out)
+
+    if os.path.exists(state_path):
+        # Restore pass: put back every saved window that still exists here.
+        with open(state_path) as f:
+            saved = json.load(f)
+        current = {v['id']: v['geometry'] for v in views}
+        moves = [(int(vid), current[int(vid)], geom)
+                 for vid, geom in saved.items() if int(vid) in current]
+        os.unlink(state_path)
+        apply_geometries(ipc, moves)
+        return
+
+    if not views:
+        return
+
+    # Tile pass: keep rough spatial order (top→bottom, left→right).
+    views.sort(key=lambda v: (v['geometry']['y'] + v['geometry']['height'] / 2,
+                              v['geometry']['x'] + v['geometry']['width'] / 2))
+    rects = mosaic_rects(out['workarea'], len(views))
+    saved = {str(v['id']): v['geometry'] for v in views}
+    with open(state_path, 'w') as f:
+        json.dump(saved, f)
+    apply_geometries(ipc, [(v['id'], v['geometry'], rect)
+                           for v, rect in zip(views, rects)])
+
+
+if __name__ == '__main__':
+    main()
