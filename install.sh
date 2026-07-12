@@ -116,13 +116,20 @@ if [ "$SKIP_BUILDS" -eq 0 ]; then
     fi
 
     # --- wayfire-plugins-extra (view-shot para miniaturas, animaciones extra) --
-    if [ -f /usr/local/lib/x86_64-linux-gnu/wayfire/libview-shot.so ]; then
-        log "wayfire-plugins-extra ya instalado — omitiendo"
+    # El sello .annotate-grid-patched marca una instalación con el parche de
+    # annotate (redimensionado de cuadrícula en caliente; sin él, cambiar
+    # vwidth/vheight con la sesión abierta tira el compositor).
+    if [ -f /usr/local/lib/x86_64-linux-gnu/wayfire/libview-shot.so ] &&
+       [ -f /usr/local/share/wayfire/.annotate-grid-patched ]; then
+        log "wayfire-plugins-extra (parcheado) ya instalado — omitiendo"
     else
         log "Compilando wayfire-plugins-extra $WF_PLUGINS_EXTRA_TAG"
         rm -rf "$BUILD_DIR/wayfire-plugins-extra"
         git clone --depth 1 --branch "$WF_PLUGINS_EXTRA_TAG" "$WF_PLUGINS_EXTRA_REPO" \
             "$BUILD_DIR/wayfire-plugins-extra"
+        log "Aplicando parche de annotate (cuadrícula redimensionable)"
+        git -C "$BUILD_DIR/wayfire-plugins-extra" apply \
+            "$REPO/patches/wayfire-plugins-extra-annotate-grid.patch"
         # meson no detecta Boost solo-cabeceras (libboost-dev sin libs compiladas);
         # los headers están en /usr/include, que el compilador ya usa por defecto.
         sed -i "s/boost = dependency('boost')/boost = declare_dependency()/" \
@@ -132,6 +139,7 @@ if [ "$SKIP_BUILDS" -eq 0 ]; then
             --prefix=/usr/local --buildtype=release
         ninja -C "$BUILD_DIR/wayfire-plugins-extra/build"
         sudo ninja -C "$BUILD_DIR/wayfire-plugins-extra/build" install
+        sudo touch /usr/local/share/wayfire/.annotate-grid-patched
     fi
 
     # --- shift-switcher (animación de raise estilo baraja de cartas, in-repo) --

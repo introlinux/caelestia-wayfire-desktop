@@ -67,9 +67,17 @@ ws_n   = int(sys.argv[1])
 app_id = sys.argv[2] if len(sys.argv) > 2 else ""
 title  = sys.argv[3] if len(sys.argv) > 3 else ""
 
-# Grid: 4 columns × 1 row
-x = (ws_n - 1) % 4
-y = (ws_n - 1) // 4
+# Grid width from the compositor (e.g. 2 for a 2x2 grid, 4 for 4x1)
+def grid_width():
+    try:
+        outs = ipc(sock, 'window-rules/list-outputs')
+        return (outs[0].get('workspace', {}).get('grid_width', 4) or 4) if outs else 4
+    except Exception:
+        return 4
+
+gw = grid_width()
+x = (ws_n - 1) % gw
+y = (ws_n - 1) // gw
 wl = os.environ.get('WAYLAND_DISPLAY', 'wayland-1')
 env = {**os.environ, 'WAYLAND_DISPLAY': wl}
 
