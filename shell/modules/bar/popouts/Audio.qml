@@ -13,6 +13,7 @@ Item {
     id: root
 
     required property PopoutState popouts
+    property string view: "output" // "output" or "input"
 
     implicitWidth: layout.implicitWidth + Tokens.padding.normal * 2
     implicitHeight: layout.implicitHeight + Tokens.padding.normal * 2
@@ -33,6 +34,8 @@ Item {
         spacing: Tokens.spacing.normal
 
         StyledText {
+            visible: root.view === "output"
+            Layout.preferredHeight: visible ? implicitHeight : 0
             text: qsTr("Output device")
             font.weight: 500
         }
@@ -45,6 +48,8 @@ Item {
 
                 required property PwNode modelData
 
+                visible: root.view === "output"
+                Layout.preferredHeight: visible ? implicitHeight : 0
                 ButtonGroup.group: sinks
                 checked: Audio.sink?.id === modelData.id
                 onClicked: Audio.setAudioSink(modelData)
@@ -53,7 +58,8 @@ Item {
         }
 
         StyledText {
-            Layout.topMargin: Tokens.spacing.smaller
+            visible: root.view === "input"
+            Layout.preferredHeight: visible ? implicitHeight : 0
             text: qsTr("Input device")
             font.weight: 500
         }
@@ -64,6 +70,8 @@ Item {
             StyledRadioButton {
                 required property PwNode modelData
 
+                visible: root.view === "input"
+                Layout.preferredHeight: visible ? implicitHeight : 0
                 ButtonGroup.group: sources
                 checked: Audio.source?.id === modelData.id
                 onClicked: Audio.setAudioSource(modelData)
@@ -74,7 +82,7 @@ Item {
         StyledText {
             Layout.topMargin: Tokens.spacing.smaller
             Layout.bottomMargin: -Tokens.spacing.small / 2
-            text: qsTr("Volume (%1)").arg(Audio.muted ? qsTr("Muted") : `${Math.round(Audio.volume * 100)}%`)
+            text: root.view === "output" ? qsTr("Volume (%1)").arg(Audio.muted ? qsTr("Muted") : `${Math.round(Audio.volume * 100)}%`) : qsTr("Volume (%1)").arg(Audio.sourceMuted ? qsTr("Muted") : `${Math.round(Audio.sourceVolume * 100)}%`)
             font.weight: 500
         }
 
@@ -83,10 +91,17 @@ Item {
             implicitHeight: Tokens.padding.normal * 3
 
             onWheel: event => {
-                if (event.angleDelta.y > 0)
-                    Audio.incrementVolume();
-                else if (event.angleDelta.y < 0)
-                    Audio.decrementVolume();
+                if (root.view === "output") {
+                    if (event.angleDelta.y > 0)
+                        Audio.incrementVolume();
+                    else if (event.angleDelta.y < 0)
+                        Audio.decrementVolume();
+                } else {
+                    if (event.angleDelta.y > 0)
+                        Audio.incrementSourceVolume();
+                    else if (event.angleDelta.y < 0)
+                        Audio.decrementSourceVolume();
+                }
             }
 
             StyledSlider {
@@ -94,8 +109,8 @@ Item {
                 anchors.right: parent.right
                 implicitHeight: parent.implicitHeight
 
-                value: Audio.volume
-                onMoved: Audio.setVolume(value)
+                value: root.view === "output" ? Audio.volume : Audio.sourceVolume
+                onMoved: root.view === "output" ? Audio.setVolume(value) : Audio.setSourceVolume(value)
 
                 Behavior on value {
                     Anim {}

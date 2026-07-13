@@ -118,6 +118,15 @@ Item {
             name: "audio"
             sourceComponent: Audio {
                 popouts: root.popouts
+                view: "output"
+            }
+        }
+
+        Popout {
+            name: "audiomic"
+            sourceComponent: Audio {
+                popouts: root.popouts
+                view: "input"
             }
         }
 

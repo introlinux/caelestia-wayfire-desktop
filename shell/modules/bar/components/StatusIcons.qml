@@ -117,7 +117,7 @@ StyledRect {
 
         // Microphone icon
         WrappedLoader {
-            name: "audio"
+            name: "audiomic"
             active: Config.bar.status.showMicrophone
 
             sourceComponent: MaterialIcon {
