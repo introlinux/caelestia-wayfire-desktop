@@ -142,8 +142,13 @@ def do_start(args: argparse.Namespace) -> None:
         else:
             gsr_args += ["eDP-1", "-f", "60"]
 
+    audio_sources = []
     if args.sound:
-        gsr_args += ["-a", "default_output"]
+        audio_sources.append("default_output")
+    if args.mic:
+        audio_sources.append("default_input")
+    if audio_sources:
+        gsr_args += ["-a", "|".join(audio_sources)]
 
     # Extra args from user config
     try:
@@ -212,6 +217,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("-r", "--region", nargs="?", const="slurp")
     parser.add_argument("-s", "--sound", action="store_true")
+    parser.add_argument("-m", "--mic", action="store_true")
     parser.add_argument("-p", "--pause", action="store_true")
     parser.add_argument("-c", "--clipboard", action="store_true")
     args = parser.parse_args()

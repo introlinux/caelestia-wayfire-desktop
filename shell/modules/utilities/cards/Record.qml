@@ -101,6 +101,12 @@ StyledRect {
                         text: qsTr("Record region with sound")
                         activeText: qsTr("Region")
                         onClicked: Recorder.start(["-sr"])
+                    },
+                    MenuItem {
+                        icon: "mic"
+                        text: qsTr("Record region with mic")
+                        activeText: qsTr("Region")
+                        onClicked: Recorder.start(["-r", "-s", "-m"])
                     }
                 ]
             }
