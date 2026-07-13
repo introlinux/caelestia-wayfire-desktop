@@ -83,6 +83,26 @@ SectionContainer {
         }
     }
 
+    StyledText {
+        Layout.topMargin: Tokens.spacing.smaller
+        text: qsTr("Weather location")
+        color: Colours.palette.m3outline
+        font.pointSize: Tokens.font.size.small
+    }
+
+    StyledInputField {
+        Layout.fillWidth: true
+        horizontalAlignment: TextInput.AlignLeft
+        text: GlobalConfig.services.weatherLocation
+        onEditingFinished: GlobalConfig.services.weatherLocation = text
+    }
+
+    StyledText {
+        text: qsTr("City name or \"lat,lon\" — leave empty to detect automatically")
+        color: Colours.palette.m3outline
+        font.pointSize: Tokens.font.size.smaller
+    }
+
     SliderInput {
         Layout.fillWidth: true
 

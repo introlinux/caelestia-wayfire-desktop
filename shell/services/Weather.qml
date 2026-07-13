@@ -212,6 +212,11 @@ Singleton {
 
     Connections {
         function onWeatherLocationChanged(): void {
+            // Switching back to automatic must not reuse the stale coordinates
+            // from the previous manual location, otherwise reload() thinks it
+            // already has a location and skips the IP lookup entirely.
+            if (!GlobalConfig.services.weatherLocation)
+                root.loc = "";
             root.reload();
         }
 

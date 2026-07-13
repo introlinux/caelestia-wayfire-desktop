@@ -56,27 +56,27 @@
 <context>
     <name>Audio</name>
     <message>
-        <location filename="../modules/bar/popouts/Audio.qml" line="36"/>
+        <location filename="../modules/bar/popouts/Audio.qml" line="39"/>
         <source>Output device</source>
         <translation>Dispositivo de salida</translation>
     </message>
     <message>
-        <location filename="../modules/bar/popouts/Audio.qml" line="57"/>
+        <location filename="../modules/bar/popouts/Audio.qml" line="63"/>
         <source>Input device</source>
         <translation>Dispositivo de entrada</translation>
     </message>
     <message>
-        <location filename="../modules/bar/popouts/Audio.qml" line="77"/>
+        <location filename="../modules/bar/popouts/Audio.qml" line="85"/>
         <source>Volume (%1)</source>
         <translation>Volumen (%1)</translation>
     </message>
     <message>
-        <location filename="../modules/bar/popouts/Audio.qml" line="77"/>
+        <location filename="../modules/bar/popouts/Audio.qml" line="85"/>
         <source>Muted</source>
         <translation>Silenciado</translation>
     </message>
     <message>
-        <location filename="../modules/bar/popouts/Audio.qml" line="112"/>
+        <location filename="../modules/bar/popouts/Audio.qml" line="127"/>
         <source>Open settings</source>
         <translation>Abrir ajustes</translation>
     </message>
@@ -1236,12 +1236,22 @@ Distribución de teclado: %1</translation>
         <translation>Mostrar pestaña Tiempo</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/dashboard/GeneralSection.qml" line="89"/>
+        <location filename="../modules/controlcenter/dashboard/GeneralSection.qml" line="88"/>
+        <source>Weather location</source>
+        <translation>Ubicación del tiempo</translation>
+    </message>
+    <message>
+        <location filename="../modules/controlcenter/dashboard/GeneralSection.qml" line="101"/>
+        <source>City name or &quot;lat,lon&quot; — leave empty to detect automatically</source>
+        <translation>Nombre de ciudad o "lat,lon" — déjalo vacío para detectarlo automáticamente</translation>
+    </message>
+    <message>
+        <location filename="../modules/controlcenter/dashboard/GeneralSection.qml" line="109"/>
         <source>Media update interval</source>
         <translation>Intervalo de actualización multimedia</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/dashboard/GeneralSection.qml" line="111"/>
+        <location filename="../modules/controlcenter/dashboard/GeneralSection.qml" line="131"/>
         <source>Drag threshold</source>
         <translation>Umbral de arrastre</translation>
     </message>
