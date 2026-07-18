@@ -75,6 +75,14 @@ CustomMouseArea {
         return y > height - Config.border.minThickness - panelHeight && withinPanelWidth(panels.launcher, x, y);
     }
 
+    // Edge-only trigger when hidden (last pixels of the frame, not the whole
+    // rounded corner); full panel size once open — same pattern as the OSD
+    // and the launcher.
+    function inUtilitiesArea(x: real, y: real): bool {
+        const panelHeight = (panels.utilities.offsetScale ?? 1) < 1 ? panels.utilities.height : 0; // qmllint disable missing-property
+        return y > height - Config.border.minThickness - panelHeight && withinPanelWidth(panels.utilities, x, y);
+    }
+
     function onWheel(event: WheelEvent): void {
         if (fullscreen)
             return;
@@ -98,6 +106,7 @@ CustomMouseArea {
                 root.panels.osd.hovered = false;
             }
 
+            dashboardShowTimer.stop();
             if (!dashboardShortcutActive)
                 visibilities.dashboard = false;
 
@@ -226,19 +235,43 @@ CustomMouseArea {
         // the user re-enter before it hides.
         if (!miniappsDragActive) {
             if (inMiniAppsArea(x, y)) {
-                miniappsHideTimer.stop();
-                visibilities.miniapps = true;
+                // Exclusión mutua con los popouts de la barra: en la esquina
+                // inferior-izquierda se solapan. Los popouts se cierran al
+                // entrar aquí, salvo un submenú de tray abierto, que se
+                // respeta (y entonces MiniApps no se abre encima).
+                const deepTray = popouts.currentName.startsWith("traymenu") && ((popouts.current as StackView)?.depth ?? 0) > 1;
+                if (popouts.hasCurrent && !deepTray) {
+                    popouts.hasCurrent = false;
+                    bar.closeTray();
+                }
+                // También exclusión con el launcher: si sigue visible (modo
+                // atajo, o hover en la franja donde ambas zonas se rozan) no
+                // se abre MiniApps encima. El cierre por hover del launcher
+                // ya ha corrido en este mismo evento, unas líneas más arriba.
+                if (!popouts.hasCurrent && !visibilities.launcher) {
+                    miniappsHideTimer.stop();
+                    visibilities.miniapps = true;
+                }
             } else if (visibilities.miniapps && !miniappsHideTimer.running) {
                 miniappsHideTimer.restart();
             }
         }
 
-        // Show dashboard on hover
+        // Show dashboard on hover. Opening is dwell-gated: the top edge is a
+        // heavily trafficked zone (browser tabs live just under it) and an
+        // instant hover-open fired constantly by accident — the pointer must
+        // rest in the strip for dashboardShowTimer's interval before the
+        // panel deploys. Closing stays immediate.
         const showDashboard = Config.dashboard.showOnHover && inTopPanel(panels.dashboard, x, y);
 
-        // Always update visibility based on hover if not in shortcut mode
         if (!dashboardShortcutActive) {
-            visibilities.dashboard = showDashboard;
+            if (showDashboard) {
+                if (!visibilities.dashboard && !dashboardShowTimer.running)
+                    dashboardShowTimer.restart();
+            } else {
+                dashboardShowTimer.stop();
+                visibilities.dashboard = false;
+            }
         } else if (showDashboard) {
             // If hovering over dashboard area while in shortcut mode, transition to hover control
             dashboardShortcutActive = false;
@@ -269,7 +302,7 @@ CustomMouseArea {
         }
 
         // Show utilities on hover
-        const showUtilities = inBottomPanel(panels.utilities, x, y, true);
+        const showUtilities = inUtilitiesArea(x, y);
 
         // Always update visibility based on hover if not in shortcut mode
         if (!utilitiesShortcutActive) {
@@ -285,6 +318,29 @@ CustomMouseArea {
         } else if ((!popouts.currentName.startsWith("traymenu") || ((popouts.current as StackView)?.depth ?? 0) <= 1) && !inLeftPanel(panels.popoutsWrapper, x, y)) {
             popouts.hasCurrent = false;
             bar.closeTray();
+        }
+
+        // Exclusión mutua (sentido inverso): con un popout abierto y el
+        // puntero fuera de la zona MiniApps, éste se cierra al instante en
+        // vez de esperar la gracia de 800ms del timer.
+        if (popouts.hasCurrent && visibilities.miniapps && !miniappsDragActive && !inMiniAppsArea(x, y)) {
+            miniappsHideTimer.stop();
+            visibilities.miniapps = false;
+        }
+    }
+
+    // Estancia mínima antes de desplegar el dashboard. Al disparar se
+    // recomprueba la posición, con containsMouse de guardia: mouseX/Y se
+    // congelan al salir de la máscara de input y sin él un roce fugaz por el
+    // borde (rumbo a las pestañas) abriría el panel igualmente.
+    Timer {
+        id: dashboardShowTimer
+
+        interval: 350
+        onTriggered: {
+            if (root.containsMouse && !root.dashboardShortcutActive &&
+                    root.inTopPanel(root.panels.dashboard, root.mouseX, root.mouseY))
+                root.visibilities.dashboard = true;
         }
     }
 
@@ -325,6 +381,14 @@ CustomMouseArea {
                 // Launcher became visible: if not triggered from the bottom edge, treat as shortcut
                 if (!root.inLauncherArea(root.mouseX, root.mouseY))
                     root.launcherShortcutActive = true;
+
+                // Exclusión con MiniApps: el launcher que se abre (por hover
+                // o por atajo) cierra el dock al instante, sin la gracia de
+                // 800ms del timer.
+                if (root.visibilities.miniapps && !root.miniappsDragActive) {
+                    miniappsHideTimer.stop();
+                    root.visibilities.miniapps = false;
+                }
             }
         }
 
@@ -356,7 +420,7 @@ CustomMouseArea {
         function onUtilitiesChanged() {
             if (root.visibilities.utilities) {
                 // Utilities became visible, immediately check if this should be shortcut mode
-                const inUtilitiesArea = root.inBottomPanel(root.panels.utilities, root.mouseX, root.mouseY);
+                const inUtilitiesArea = root.inUtilitiesArea(root.mouseX, root.mouseY);
                 if (!inUtilitiesArea) {
                     root.utilitiesShortcutActive = true;
                 }
