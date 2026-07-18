@@ -77,3 +77,27 @@ qml6-module-qt-labs-folderlistmodel
 qml6-module-qt-labs-platform
 qml6-module-qt-labs-qmlmodels
 qml6-module-qt-labs-settings
+# --- MiniApps (~/MiniApps, dock de la esquina inferior-izquierda) ---
+# Diálogos: casi todas las miniapps usan zenity (yad ya está arriba)
+zenity
+# Gráficos: girar/redimensionar/convertir con ImageMagick; minilibro usa img2pdf
+imagemagick
+img2pdf
+# Office: comprimir=ghostscript, unir/reorganizar=qpdf+pypdf, PDF→PNG=poppler,
+# recortar con interfaz GTK4 (python3-gi), docs→PDF vía soffice headless
+ghostscript
+qpdf
+poppler-utils
+python3-pypdf
+python3-gi
+gir1.2-gtk-4.0
+libreoffice
+# Multimedia: conversiones/cortes/uniones con ffmpeg, info con mediainfo
+ffmpeg
+mediainfo
+# Sistema: duplicados (rdfind), recuperar borrados (foremost),
+# benchmark de discos (fio), renombrado a UTF-8 (convmv)
+rdfind
+foremost
+fio
+convmv
