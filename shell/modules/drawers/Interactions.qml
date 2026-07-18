@@ -301,8 +301,11 @@ CustomMouseArea {
                 visibilities.dashboard = false;
         }
 
-        // Show utilities on hover
-        const showUtilities = inUtilitiesArea(x, y);
+        // Show utilities on hover. Exclusión con el launcher, su vecino de la
+        // izquierda: si sigue visible (modo atajo, o la franja donde ambas
+        // zonas se rozan) utilities no se abre encima. El cierre por hover
+        // del launcher ya ha corrido en este mismo evento, más arriba.
+        const showUtilities = inUtilitiesArea(x, y) && !visibilities.launcher;
 
         // Always update visibility based on hover if not in shortcut mode
         if (!utilitiesShortcutActive) {
@@ -389,6 +392,10 @@ CustomMouseArea {
                     miniappsHideTimer.stop();
                     root.visibilities.miniapps = false;
                 }
+
+                // Y con utilities, su vecino de la derecha
+                if (root.visibilities.utilities)
+                    root.visibilities.utilities = false;
             }
         }
 
@@ -419,6 +426,14 @@ CustomMouseArea {
 
         function onUtilitiesChanged() {
             if (root.visibilities.utilities) {
+                // Exclusión con el launcher: por hover no puede pasar (el
+                // guard de showUtilities lo impide), así que esto solo actúa
+                // cuando utilities se abre por atajo — la acción más reciente
+                // gana. Va antes de detectar el modo atajo porque cerrar el
+                // launcher limpia utilitiesShortcutActive de rebote.
+                if (root.visibilities.launcher)
+                    root.visibilities.launcher = false;
+
                 // Utilities became visible, immediately check if this should be shortcut mode
                 const inUtilitiesArea = root.inUtilitiesArea(root.mouseX, root.mouseY);
                 if (!inUtilitiesArea) {
