@@ -1,0 +1,87 @@
+diff --git a/src/core/seat/cursor.cpp b/src/core/seat/cursor.cpp
+index becc6a6..5b2f406 100644
+--- a/src/core/seat/cursor.cpp
++++ b/src/core/seat/cursor.cpp
+@@ -112,11 +112,14 @@ void wf::cursor_t::init_xcursor()
+     auto theme_ptr = (theme == "default") ? NULL : theme.c_str();
+ 
+     // Set environment variables needed for Xwayland and maybe other apps
+-    // which use them to determine the correct cursor size
+-    setenv("XCURSOR_SIZE", std::to_string(size).c_str(), 1);
++    // which use them to determine the correct cursor size. Do not override
++    // values the user has already set in the session environment: X11 clients
++    // are displayed at scale 1, so on scaled outputs they may need a size
++    // different from the compositor's logical cursor_size.
++    setenv("XCURSOR_SIZE", std::to_string(size).c_str(), 0);
+     if (theme_ptr)
+     {
+-        setenv("XCURSOR_THEME", theme_ptr, 1);
++        setenv("XCURSOR_THEME", theme_ptr, 0);
+     }
+ 
+     if (xcursor)
+diff --git a/src/view/xwayland.cpp b/src/view/xwayland.cpp
+index 38e9f22..90d68f4 100644
+--- a/src/view/xwayland.cpp
++++ b/src/view/xwayland.cpp
+@@ -287,16 +287,54 @@ void wf::xwayland_update_default_cursor()
+         return;
+     }
+ 
+-    auto xc     = wf::get_core_impl().seat->priv->cursor->xcursor;
++    auto xc = wf::get_core_impl().seat->priv->cursor->xcursor;
++
++    /* The xcursor manager lazily loads the theme per output scale. On setups
++     * where every output has scale > 1 the scale-1 theme is never loaded, so
++     * the lookup below returns NULL and Xwayland is left with its built-in
++     * root cursor (the X_cursor cross). Make sure scale 1 is available. */
++    wlr_xcursor_manager_load(xc, 1);
+     auto cursor = wlr_xcursor_manager_get_xcursor(xc, "left_ptr", 1);
+-    if (cursor && (cursor->image_count > 0))
++    if (!cursor || (cursor->image_count == 0))
+     {
+-        auto image = cursor->images[0];
+-        wlr_xwayland_set_cursor(xwayland_handle, image->buffer,
+-            image->width * 4, image->width, image->height,
+-            image->hotspot_x, image->hotspot_y);
++        return;
++    }
++
++    auto image = cursor->images[0];
++
++    /* Some themes (clay, breeze...) paint on a canvas larger than the
++     * nominal size, and Xwayland surfaces are displayed at scale 1, so the
++     * root cursor would end up larger than the compositor's own cursor.
++     * Reload at a smaller nominal size so the canvas fits the configured
++     * size. The extra theme must stay alive while Xwayland uses the buffer. */
++    static wlr_xcursor_theme *fit_theme = NULL;
++    if (image->width > xc->size)
++    {
++        int fit_size = (int)(xc->size * xc->size / image->width);
++        auto *reload = wlr_xcursor_theme_load(xc->name, fit_size);
++        if (reload)
++        {
++            if (auto *fit = wlr_xcursor_theme_get_cursor(reload, "left_ptr");
++                fit && (fit->image_count > 0))
++            {
++                if (fit_theme)
++                {
++                    wlr_xcursor_theme_destroy(fit_theme);
++                }
++
++                fit_theme = reload;
++                image     = fit->images[0];
++            } else
++            {
++                wlr_xcursor_theme_destroy(reload);
++            }
++        }
+     }
+ 
++    wlr_xwayland_set_cursor(xwayland_handle, image->buffer,
++        image->width * 4, image->width, image->height,
++        image->hotspot_x, image->hotspot_y);
++
+ #endif
+ }
+ 

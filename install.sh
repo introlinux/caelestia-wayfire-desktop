@@ -101,6 +101,8 @@ if [ "$SKIP_BUILDS" -eq 0 ]; then
         git clone --depth 1 --branch "$WAYFIRE_TAG" "$WAYFIRE_REPO" "$BUILD_DIR/wayfire"
         log "Aplicando parche de scale (hover focus + drag-and-drop)"
         git -C "$BUILD_DIR/wayfire" apply "$REPO/patches/wayfire-scale-hover-dnd.patch"
+        log "Aplicando parche del cursor raíz de Xwayland (aspa en HiDPI)"
+        git -C "$BUILD_DIR/wayfire" apply "$REPO/patches/wayfire-xwayland-root-cursor.patch"
         meson setup "$BUILD_DIR/wayfire/build" "$BUILD_DIR/wayfire" \
             --prefix=/usr/local --buildtype=release \
             -Duse_system_wlroots=enabled -Duse_system_wfconfig=enabled -Dtests=disabled
@@ -287,6 +289,17 @@ if ! sudo visudo -cf /etc/sudoers.d/caelestia-cpufreq >/dev/null; then
 fi
 # Ceba la caché del máximo real del hardware (ver comentario en el helper)
 sudo /usr/local/bin/caelestia-cpufreq status >/dev/null
+
+# Las apps gráficas lanzadas con sudo (gparted, synaptic...) pierden el tema y
+# tamaño del cursor al limpiarse el entorno; conservamos solo esas dos vars.
+log "Instalando regla sudoers del cursor (env_keep XCURSOR_*)"
+printf 'Defaults env_keep += "XCURSOR_THEME XCURSOR_SIZE"\n' \
+    | sudo tee /etc/sudoers.d/caelestia-cursor >/dev/null
+sudo chmod 440 /etc/sudoers.d/caelestia-cursor
+if ! sudo visudo -cf /etc/sudoers.d/caelestia-cursor >/dev/null; then
+    sudo rm -f /etc/sudoers.d/caelestia-cursor
+    warn "Regla sudoers del cursor inválida — descartada"
+fi
 
 log "Instalando configuraciones en ~/.config"
 install_templated "$REPO/config/wayfire.ini"                      "$HOME/.config/wayfire.ini"
