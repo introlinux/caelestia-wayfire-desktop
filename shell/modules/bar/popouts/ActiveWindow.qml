@@ -197,6 +197,20 @@ Item {
                 visible: thumb.current === null
                 source: Icons.getAppIcon(root.previewToplevel?.appId ?? "", "application-x-executable")
             }
+
+            // Clicking the thumbnail focuses the window, like clicking its icon
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+
+                onClicked: {
+                    const t = root.previewToplevel
+                    if (!t) return
+                    root.popouts.hasCurrent = false
+                    if (t.minimized) t.minimized = false
+                    t.activate()
+                }
+            }
         }
 
         // Workspace send buttons (workspaces 1-4)
