@@ -20,7 +20,7 @@ recording_notif_path: Path = _state_dir / "record/notifid.txt"
 
 RECORDER = "gpu-screen-recorder"
 COUNTDOWN_SECS = 3
-projector_sound = Path.home() / "caelestia-wayfire/assets/sound-projector.mp3"
+projector_sound = Path.home() / ".caelestia/caelestia-wayfire/assets/sound-projector.mp3"
 
 
 def countdown() -> None:

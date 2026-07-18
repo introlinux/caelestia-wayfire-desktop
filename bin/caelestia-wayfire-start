@@ -11,7 +11,7 @@ export QT_QPA_PLATFORMTHEME=gtk3
 # Launch by config NAME (not path) so `qs -c caelestia ipc ...` — and therefore
 # the upstream `caelestia` CLI — can find the instance. Quickshell matches
 # instances by the literal -c argument, so the name must be identical on both
-# sides. ~/.config/quickshell/caelestia is a symlink to ~/caelestia-wayfire
+# sides. ~/.config/quickshell/caelestia is a symlink to ~/.caelestia/caelestia-wayfire
 # (created by install.sh).
 exec /usr/local/bin/quickshell -c caelestia \
     >> /tmp/caelestia-qs.log 2>&1

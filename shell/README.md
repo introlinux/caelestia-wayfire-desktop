@@ -82,7 +82,7 @@ WAYLAND_DISPLAY=wayland-1 wayfire   # Wayfire se crea en wayland-2 automáticame
 
 # Lanzar Quickshell en la sesión anidada
 WAYLAND_DISPLAY=wayland-2 WAYFIRE_SOCKET=/run/user/1000/wayfire-wayland-2-.socket \
-  quickshell -c ~/caelestia-wayfire &
+  quickshell -c ~/.caelestia/caelestia-wayfire &
 ```
 
 > **Nota:** El socket de Wayfire sigue el patrón `wayfire-${WAYLAND_DISPLAY}-.socket`.
@@ -93,7 +93,7 @@ WAYLAND_DISPLAY=wayland-2 WAYFIRE_SOCKET=/run/user/1000/wayfire-wayland-2-.socke
 ### Recarga en caliente
 
 ```
-Super+F5  → pkill quickshell && quickshell -c ~/caelestia-wayfire &
+Super+F5  → pkill quickshell && quickshell -c ~/.caelestia/caelestia-wayfire &
 ```
 
 > **IMPORTANTE:** El `command_reload_qs` en `wayfire.ini` NO pasa `WAYFIRE_SOCKET`
