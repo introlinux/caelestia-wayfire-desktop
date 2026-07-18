@@ -1,0 +1,66 @@
+#!/bin/bash
+# Programa un apagado o reinicio del equipo dentro de N minutos (vía logind,
+# sin contraseña para la sesión activa). Si ya hay uno programado, ofrece cancelarlo.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Autoapagado"
+         T_ACTION="Acción"
+         T_OFF="Apagar"
+         T_REBOOT="Reiniciar"
+         T_MIN="Dentro de (minutos)"
+         T_PENDING="Ya hay un apagado o reinicio programado.\n\n¿Desea cancelarlo?"
+         T_CANCELLED="Programación cancelada."
+         T_DONE="El equipo se apagará a las"
+         T_DONE_R="El equipo se reiniciará a las"
+         T_ERR="No se pudo programar. ¿Tiene permisos de apagado?" ;;
+    gl*) T_TITLE="Autoapagado"
+         T_ACTION="Acción"
+         T_OFF="Apagar"
+         T_REBOOT="Reiniciar"
+         T_MIN="Dentro de (minutos)"
+         T_PENDING="Xa hai un apagado ou reinicio programado.\n\nDesexa cancelalo?"
+         T_CANCELLED="Programación cancelada."
+         T_DONE="O equipo apagarase ás"
+         T_DONE_R="O equipo reiniciarase ás"
+         T_ERR="Non se puido programar. Ten permisos de apagado?" ;;
+    *)   T_TITLE="Auto shutdown"
+         T_ACTION="Action"
+         T_OFF="Power off"
+         T_REBOOT="Reboot"
+         T_MIN="In (minutes)"
+         T_PENDING="A shutdown or reboot is already scheduled.\n\nDo you want to cancel it?"
+         T_CANCELLED="Schedule cancelled."
+         T_DONE="The computer will power off at"
+         T_DONE_R="The computer will reboot at"
+         T_ERR="Scheduling failed. Do you have shutdown permissions?" ;;
+esac
+
+# ¿Hay ya un apagado programado? (logind lo anota en este archivo)
+if [ -e /run/systemd/shutdown/scheduled ]; then
+    if zenity --question --title="$T_TITLE" --text="$T_PENDING"; then
+        systemctl poweroff --when=cancel 2>/dev/null
+        zenity --info --title="$T_TITLE" --text="$T_CANCELLED"
+    fi
+    exit 0
+fi
+
+datos=$(yad --form --title="$T_TITLE" --width=330 \
+    --field="$T_ACTION:CB" "$T_OFF!$T_REBOOT" \
+    --field="$T_MIN:NUM" '30!1..1440!5!0') || exit 0
+
+accion=$(echo "$datos" | cut -d'|' -f1)
+min=$(echo "$datos" | cut -d'|' -f2 | cut -d',' -f1 | cut -d'.' -f1)
+[ -z "$min" ] && exit 0
+
+if [ "$accion" = "$T_REBOOT" ]; then verbo=reboot; texto="$T_DONE_R"; else verbo=poweroff; texto="$T_DONE"; fi
+
+if systemctl "$verbo" --when="+${min}min" 2>/dev/null; then
+    hora=$(date -d "+${min} min" +%H:%M)
+    notify-send -i system-shutdown "$T_TITLE" "$texto $hora" 2>/dev/null
+    zenity --info --title="$T_TITLE" --text="$texto <b>$hora</b>."
+else
+    zenity --error --title="$T_TITLE" --text="$T_ERR"
+    exit 1
+fi
+exit 0

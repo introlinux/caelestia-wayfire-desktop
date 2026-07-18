@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Crops PDFs: automatically (trims
+    blank margins) or manually, dragging
+    a rectangle with the mouse on a
+    preview page and applying it to every
+    page. The result is saved next to
+    the original.
+
+    Drag one or more PDFs onto the
+    icon, or launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Recorta PDF: de forma automática
+    (quita los márgenes en blanco) o
+    manual, arrastrando con el ratón un
+    rectángulo sobre una página de muestra
+    y aplicándolo a todas las páginas. El
+    resultado se guarda junto al original.
+
+    Arrastre uno o varios PDF sobre
+    el icono, o láncelo para elegirlos.
+  </Summary>
+  <Summary xml:lang="gl">
+    Recorta PDF: de forma automática
+    (quita as marxes en branco) ou manual,
+    arrastrando co rato un rectángulo
+    sobre unha páxina de mostra e
+    aplicándoo a todas as páxinas. O
+    resultado gárdase a carón do orixinal.
+
+    Arrastre un ou varios PDF sobre
+    a icona, ou lánceo para escollelos.
+  </Summary>
+</AppInfo>

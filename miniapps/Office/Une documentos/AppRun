@@ -1,0 +1,81 @@
+#!/bin/bash
+# Une varios documentos en un único PDF, en el orden en que se arrastran.
+# Los que no sean PDF (ODT, DOCX, ODP...) se convierten antes con LibreOffice.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Une documentos"
+         T_PICK="Seleccione los documentos a unir (mínimo 2)"
+         T_FEW="Se necesitan al menos dos documentos para unirlos."
+         T_CONV="Preparando"
+         T_ERRC="Estos documentos no se pudieron convertir y quedarán fuera:"
+         T_NOPDF="Ningún documento se pudo preparar; no hay nada que unir."
+         T_SAVETIT="¿Dónde guardamos el PDF resultante?"
+         T_ERRJOIN="No se pudo crear el PDF unido." ;;
+    gl*) T_TITLE="Une documentos"
+         T_PICK="Seleccione os documentos a unir (mínimo 2)"
+         T_FEW="Precísanse polo menos dous documentos para unilos."
+         T_CONV="Preparando"
+         T_ERRC="Estes documentos non se puideron converter e quedarán fóra:"
+         T_NOPDF="Ningún documento se puido preparar; non hai nada que unir."
+         T_SAVETIT="Onde gardamos o PDF resultante?"
+         T_ERRJOIN="Non se puido crear o PDF unido." ;;
+    *)   T_TITLE="Join documents"
+         T_PICK="Select the documents to join (at least 2)"
+         T_FEW="At least two documents are needed."
+         T_CONV="Preparing"
+         T_ERRC="These documents could not be converted and will be left out:"
+         T_NOPDF="No document could be prepared; there is nothing to join."
+         T_SAVETIT="Where do we save the resulting PDF?"
+         T_ERRJOIN="The joined PDF could not be created." ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t files < <(zenity --file-selection --multiple --separator=$'\n' --title="$T_PICK")
+else
+    files=("$@")
+fi
+if [ ${#files[@]} -lt 2 ]; then
+    zenity --info --title="$T_TITLE" --text="$T_FEW"
+    exit 0
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+lista="$tmp/lista" errores="$tmp/errores"
+
+(
+    total=${#files[@]}
+    n=0
+    for f in "${files[@]}"; do
+        echo "# $T_CONV: $(basename "$f")"
+        if [ "$(file -b --mime-type "$f")" = "application/pdf" ]; then
+            printf '%s\n' "$f" >>"$lista"
+        elif soffice --headless --convert-to pdf --outdir "$tmp/conv" "$f" >/dev/null 2>&1; then
+            base=$(basename "$f")
+            pdf="$tmp/conv/${base%.*}.pdf"
+            if [ -f "$pdf" ]; then printf '%s\n' "$pdf" >>"$lista"; else basename "$f" >>"$errores"; fi
+        else
+            basename "$f" >>"$errores"
+        fi
+        n=$((n + 1))
+        echo $((100 * n / total))
+    done
+) | zenity --progress --auto-close --title="$T_TITLE" --width=350
+
+[ -s "$errores" ] && zenity --warning --title="$T_TITLE" --text="$T_ERRC\n\n$(cat "$errores")"
+
+mapfile -t pdfs <"$lista" 2>/dev/null
+if [ ${#pdfs[@]} -eq 0 ]; then
+    zenity --error --title="$T_TITLE" --text="$T_NOPDF"
+    exit 1
+fi
+
+destino=$(zenity --file-selection --save --filename="unido.pdf" --title="$T_SAVETIT") || exit 0
+case $destino in *.pdf | *.PDF) ;; *) destino="$destino.pdf" ;; esac
+
+if ! qpdf --empty --pages "${pdfs[@]}" -- "$destino" 2>"$tmp/qpdf.err"; then
+    zenity --error --title="$T_TITLE" --text="$T_ERRJOIN\n\n$(head -n5 "$tmp/qpdf.err")"
+    exit 1
+fi
+exit 0

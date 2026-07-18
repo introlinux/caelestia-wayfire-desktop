@@ -1,0 +1,57 @@
+#!/bin/bash
+# Convierte cada página de uno o varios PDF a imágenes PNG (150 ppp),
+# en una subcarpeta "<nombre>_png" junto a cada PDF.
+set -u
+
+case $LANG in
+    es*) T_TITLE="De PDF a PNG"
+         T_PICK="Seleccione los PDF a convertir"
+         T_FILE="Convirtiendo"
+         T_DONE="Conversión completada. Imágenes creadas en:"
+         T_ERR="No se pudieron convertir estos archivos (¿son PDF?):" ;;
+    gl*) T_TITLE="De PDF a PNG"
+         T_PICK="Seleccione os PDF a converter"
+         T_FILE="Convertendo"
+         T_DONE="Conversión completada. Imaxes creadas en:"
+         T_ERR="Non se puideron converter estes ficheiros (son PDF?):" ;;
+    *)   T_TITLE="PDF to PNG"
+         T_PICK="Select the PDFs to convert"
+         T_FILE="Converting"
+         T_DONE="Conversion finished. Images created in:"
+         T_ERR="These files could not be converted (are they PDFs?):" ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t files < <(zenity --file-selection --multiple --separator=$'\n' \
+        --title="$T_PICK" --file-filter="PDF | *.pdf *.PDF")
+else
+    files=("$@")
+fi
+[ ${#files[@]} -eq 0 ] && exit 0
+
+errores=$(mktemp) creados=$(mktemp)
+trap 'rm -f "$errores" "$creados"' EXIT
+
+(
+    for f in "${files[@]}"; do
+        echo "# $T_FILE: $(basename "$f")"
+        if [ "$(file -b --mime-type "$f")" != "application/pdf" ]; then
+            basename "$f" >>"$errores"
+            continue
+        fi
+        base=$(basename "$f"); base="${base%.*}"
+        outdir="$(dirname "$f")/${base}_png"
+        mkdir -p "$outdir"
+        if pdftoppm -png -r 150 "$f" "$outdir/$base" 2>/dev/null; then
+            printf '%s\n' "$outdir" >>"$creados"
+        else
+            rmdir "$outdir" 2>/dev/null
+            basename "$f" >>"$errores"
+        fi
+    done
+    echo 100
+) | zenity --progress --pulsate --auto-close --title="$T_TITLE" --width=350
+
+[ -s "$creados" ] && zenity --info --title="$T_TITLE" --text="$T_DONE\n\n$(cat "$creados")"
+[ -s "$errores" ] && zenity --warning --title="$T_TITLE" --text="$T_ERR\n\n$(cat "$errores")"
+exit 0

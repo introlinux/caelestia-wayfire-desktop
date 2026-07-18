@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Converts a batch of documents to PDF,
+    joins them into a single file and
+    opens it in the viewer ready to print
+    (Ctrl+P).
+
+    Drag the documents onto the icon,
+    or launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Convierte un lote de documentos a PDF,
+    los une en un solo archivo y lo abre
+    en el visor listo para imprimir
+    (Ctrl+P).
+
+    Arrastre los documentos sobre el
+    icono, o láncelo para elegirlos.
+  </Summary>
+  <Summary xml:lang="gl">
+    Converte un lote de documentos a PDF,
+    úneos nun só ficheiro e ábreo no
+    visor listo para imprimir (Ctrl+P).
+
+    Arrastre os documentos sobre a
+    icona, ou lánceo para escollelos.
+  </Summary>
+</AppInfo>

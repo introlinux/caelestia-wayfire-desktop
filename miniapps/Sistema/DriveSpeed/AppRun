@@ -1,0 +1,101 @@
+#!/bin/bash
+# Mide la velocidad de lectura y escritura secuencial de una unidad montada
+# (pendrive, tarjeta, disco) con fio, usando un archivo temporal de 256 MB.
+set -u
+
+case $LANG in
+    es*) T_TITLE="DriveSpeed"
+         T_TEXT="Elija la unidad a medir:"
+         C_MOUNT="Unidad (punto de montaje)" C_DEV="Dispositivo" C_SIZE="Tamaño" C_FREE="Libre"
+         T_NOSPACE="No hay espacio suficiente en la unidad (se necesitan 300 MB libres)."
+         T_WRITE="Midiendo velocidad de escritura..."
+         T_READ="Midiendo velocidad de lectura..."
+         T_RES="Resultados de"
+         T_W="Escritura secuencial:"
+         T_R="Lectura secuencial:"
+         T_ERR="La prueba falló. ¿La unidad admite escritura?" ;;
+    gl*) T_TITLE="DriveSpeed"
+         T_TEXT="Escolla a unidade a medir:"
+         C_MOUNT="Unidade (punto de montaxe)" C_DEV="Dispositivo" C_SIZE="Tamaño" C_FREE="Libre"
+         T_NOSPACE="Non hai espazo abondo na unidade (precísanse 300 MB libres)."
+         T_WRITE="Medindo a velocidade de escritura..."
+         T_READ="Medindo a velocidade de lectura..."
+         T_RES="Resultados de"
+         T_W="Escritura secuencial:"
+         T_R="Lectura secuencial:"
+         T_ERR="A proba fallou. Admite escritura a unidade?" ;;
+    *)   T_TITLE="DriveSpeed"
+         T_TEXT="Choose the drive to benchmark:"
+         C_MOUNT="Drive (mount point)" C_DEV="Device" C_SIZE="Size" C_FREE="Free"
+         T_NOSPACE="Not enough free space on the drive (300 MB needed)."
+         T_WRITE="Measuring write speed..."
+         T_READ="Measuring read speed..."
+         T_RES="Results for"
+         T_W="Sequential write:"
+         T_R="Sequential read:"
+         T_ERR="The test failed. Is the drive writable?" ;;
+esac
+
+# La unidad del usuario siempre está disponible, más las unidades montadas
+# sobre dispositivos reales con permiso de escritura
+filas=(FALSE "$HOME" "$(df --output=source "$HOME" | tail -1)" \
+    "$(df -h --output=size "$HOME" | tail -1 | tr -d ' ')" \
+    "$(df -h --output=avail "$HOME" | tail -1 | tr -d ' ')")
+while read -r target source size avail; do
+    [ -w "$target" ] || continue
+    [ "$target" = "$HOME" ] && continue
+    filas+=(FALSE "$target" "$source" "$size" "$avail")
+done < <(findmnt --real -rn -o TARGET,SOURCE,SIZE,AVAIL | grep ' /dev/')
+
+# Si se arrastró una carpeta, medir su sistema de archivos directamente
+if [ $# -gt 0 ] && [ -d "$1" ]; then
+    unidad=$(df --output=target "$1" | tail -1)
+else
+    unidad=$(zenity --list --radiolist --title="$T_TITLE" --text="$T_TEXT" \
+        --column="" --column="$C_MOUNT" --column="$C_DEV" --column="$C_SIZE" --column="$C_FREE" \
+        "${filas[@]}" --width=560 --height=340) || exit 0
+fi
+[ -z "$unidad" ] && exit 0
+
+libre_kb=$(df --output=avail -k "$unidad" | tail -1)
+if [ "$libre_kb" -lt 307200 ]; then
+    zenity --error --title="$T_TITLE" --text="$T_NOSPACE"
+    exit 1
+fi
+
+archivo="$unidad/.drivespeed.tmp"
+tmp=$(mktemp -d)
+trap 'rm -f "$archivo"; rm -rf "$tmp"' EXIT
+
+medir() { # $1=write|read  $2=json de salida
+    fio --name=test --filename="$archivo" --size=256M --bs=1M --rw="$1" \
+        --direct=1 --ioengine=libaio --iodepth=4 --runtime=20 \
+        --output-format=json --output="$2" >/dev/null 2>&1 ||
+    fio --name=test --filename="$archivo" --size=256M --bs=1M --rw="$1" \
+        --ioengine=psync --end_fsync=1 --runtime=20 \
+        --output-format=json --output="$2" >/dev/null 2>&1
+}
+
+(medir write "$tmp/w.json"; echo 100) |
+    zenity --progress --pulsate --auto-close --title="$T_TITLE" --text="$T_WRITE" --width=350
+(medir read "$tmp/r.json"; echo 100) |
+    zenity --progress --pulsate --auto-close --title="$T_TITLE" --text="$T_READ" --width=350
+
+resultado=$(python3 - "$tmp/w.json" "$tmp/r.json" <<'EOF'
+import json, sys
+def mbs(path, modo):
+    with open(path) as f:
+        datos = json.load(f)
+    return datos["jobs"][0][modo]["bw_bytes"] / 1e6
+try:
+    print(f"{mbs(sys.argv[1], 'write'):.1f}|{mbs(sys.argv[2], 'read'):.1f}")
+except Exception:
+    sys.exit(1)
+EOF
+) || { zenity --error --title="$T_TITLE" --text="$T_ERR"; exit 1; }
+
+vel_w=${resultado%%|*}
+vel_r=${resultado##*|}
+zenity --info --title="$T_TITLE" --width=340 \
+    --text="<b>$T_RES $unidad</b>\n\n$T_W ${vel_w} MB/s\n$T_R ${vel_r} MB/s"
+exit 0

@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Levels the perceived volume of audio
+    files (MP3, OGG, FLAC, M4A...) by
+    writing ReplayGain tags. No
+    re-encoding: quality is untouched
+    and it is reversible.
+
+    Drag files or folders onto the icon,
+    or launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Iguala el volumen percibido de archivos
+    de audio (MP3, OGG, FLAC, M4A...)
+    escribiendo etiquetas ReplayGain. No
+    recodifica: la calidad no se toca y
+    es reversible.
+
+    Arrastre archivos o carpetas sobre el
+    icono, o láncelo para elegirlos.
+  </Summary>
+  <Summary xml:lang="gl">
+    Iguala o volume percibido de ficheiros
+    de son (MP3, OGG, FLAC, M4A...)
+    escribindo etiquetas ReplayGain. Non
+    recodifica: a calidade non se toca e
+    é reversible.
+
+    Arrastre ficheiros ou cartafoles sobre
+    a icona, ou lánceo para escollelos.
+  </Summary>
+</AppInfo>

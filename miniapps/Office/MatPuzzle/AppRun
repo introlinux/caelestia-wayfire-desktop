@@ -1,0 +1,113 @@
+#!/bin/bash
+# MatPuzzle: a partir de una imagen y una lista de operaciones crea una ficha
+# imprimible: tablero con los resultados + piezas desordenadas con las
+# operaciones. El alumno resuelve, recorta y pega para recomponer la imagen.
+set -u
+
+case $LANG in
+    es*) T_TITLE="MatPuzzle"
+         T_PICK="Seleccione la imagen del puzzle"
+         T_SIZE="Tamaño"
+         T_OPS="Operaciones"
+         T_DEC="División con decimales"
+         T_TEXT="Escriba tantas operaciones como piezas, separadas por espacios."
+         T_NUM="Hay que escribir exactamente %d operaciones (ha escrito %d)."
+         T_BAD="Hay una operación que no se entiende:"
+         T_DUP="¡Cuidado! Hay operaciones con el mismo resultado\n(el puzzle sería ambiguo):"
+         T_DOING="Construyendo el puzzle..."
+         T_SAVETIT="¿Dónde guardamos la ficha?"
+         T_ERR="No se pudo crear la ficha." ;;
+    gl*) T_TITLE="MatPuzzle"
+         T_PICK="Seleccione a imaxe do puzzle"
+         T_SIZE="Tamaño"
+         T_OPS="Operacións"
+         T_DEC="División con decimais"
+         T_TEXT="Escriba tantas operacións como pezas, separadas por espazos."
+         T_NUM="Hai que escribir exactamente %d operacións (escribiu %d)."
+         T_BAD="Hai unha operación que non se entende:"
+         T_DUP="Coidado! Hai operacións co mesmo resultado\n(o puzzle sería ambiguo):"
+         T_DOING="Construíndo o puzzle..."
+         T_SAVETIT="Onde gardamos a ficha?"
+         T_ERR="Non se puido crear a ficha." ;;
+    *)   T_TITLE="MatPuzzle"
+         T_PICK="Select the puzzle image"
+         T_SIZE="Size"
+         T_OPS="Operations"
+         T_DEC="Division with decimals"
+         T_TEXT="Type as many operations as pieces, separated by spaces."
+         T_NUM="You must type exactly %d operations (you typed %d)."
+         T_BAD="There is an operation I cannot understand:"
+         T_DUP="Careful! Some operations share the same result\n(the puzzle would be ambiguous):"
+         T_DOING="Building the puzzle..."
+         T_SAVETIT="Where do we save the worksheet?"
+         T_ERR="The worksheet could not be created." ;;
+esac
+
+ruta=$(dirname "$(readlink -f "$0")")
+
+if [ $# -eq 0 ]; then
+    f=$(zenity --file-selection --title="$T_PICK") || exit 0
+    set -- "$f"
+fi
+imagen="$1"
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+ops_defecto="2*5 3x4 18:2 20:4 2+5 12-5 3² 2³ (2+3)*2 30:3 4x4 5+8"
+while :; do
+    OPCIONES=$(yad --form --title="$T_TITLE" --width=520 \
+        --text="$T_TEXT" \
+        --field="$T_SIZE:CB" '3x4!3x5!4x5' \
+        --field="$T_OPS" "$ops_defecto" \
+        --field="$T_DEC:CHK" FALSE) || exit 0
+
+    tam=$(echo "$OPCIONES" | cut -d'|' -f1)
+    ops=$(echo "$OPCIONES" | cut -d'|' -f2)
+    dec=$(echo "$OPCIONES" | cut -d'|' -f3)
+    ops_defecto="$ops"
+
+    cols=${tam%x*}
+    filas=${tam#*x}
+    celdas=$((cols * filas))
+    n=$(echo "$ops" | wc -w)
+    if [ "$n" -ne "$celdas" ]; then
+        # shellcheck disable=SC2059
+        zenity --error --title="$T_TITLE" --text="$(printf "$T_NUM" "$celdas" "$n")"
+        continue
+    fi
+
+    # Troceamos la imagen: vertical, celdas cuadradas de 160 px
+    lado=160
+    magick "$imagen" -auto-orient -background white -alpha remove -trim +repage "$tmp/img.png" 2>/dev/null || {
+        zenity --error --title="$T_TITLE" --text="$T_ERR"; exit 1; }
+    ancho=$(magick identify -format %w "$tmp/img.png")
+    alto=$(magick identify -format %h "$tmp/img.png")
+    if [ "$ancho" -gt "$alto" ]; then
+        magick "$tmp/img.png" -rotate -90 "$tmp/img.png"
+    fi
+    magick "$tmp/img.png" -resize "$((cols * lado))x$((filas * lado))^" \
+        -gravity center -extent "$((cols * lado))x$((filas * lado))" "$tmp/img.png"
+    magick "$tmp/img.png" -crop "${cols}x${filas}@" +repage +adjoin "$tmp/%d.png"
+
+    salida="$tmp/ficha.pdf"
+    if python3 "$ruta/matpuzzle.py" "$tmp" "$cols" "$filas" "$ops" "$dec" "$salida" "$tmp/avisos.txt"; then
+        break
+    else
+        case $? in
+            3) zenity --error --title="$T_TITLE" --text="$T_BAD $ops" ;;
+            *) zenity --error --title="$T_TITLE" --text="$T_ERR" ; exit 1 ;;
+        esac
+    fi
+done
+
+if [ -s "$tmp/avisos.txt" ]; then
+    zenity --warning --title="$T_TITLE" --text="$T_DUP\n\n$(cat "$tmp/avisos.txt")"
+fi
+
+base=$(basename "$imagen")
+destino=$(zenity --file-selection --save --filename="${base%.*}_matpuzzle.pdf" --title="$T_SAVETIT") || exit 0
+case $destino in *.pdf | *.PDF) ;; *) destino="$destino.pdf" ;; esac
+cp "$salida" "$destino"
+gio open "$destino" 2>/dev/null
+exit 0

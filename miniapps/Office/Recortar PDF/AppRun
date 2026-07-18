@@ -1,0 +1,104 @@
+#!/bin/bash
+# Recorta uno o varios PDF. Dos modos:
+#  - Automático: quita los márgenes en blanco alrededor del contenido
+#    (Ghostscript -sDEVICE=bbox + recorta.py), por lotes.
+#  - Manual: se ajusta con el ratón un rectángulo sobre una página de
+#    muestra (recorta_manual.py, Tkinter) y ese recorte se aplica a todas
+#    las páginas del documento, al estilo del antiguo pdf-quench.
+# El resultado se guarda junto al original con "_recortado".
+set -u
+
+case $LANG in
+    es*) T_TITLE="Recortar PDF"
+         T_PICK="Seleccione los PDF a recortar"
+         T_MODE_TEXT="Elija cómo quiere recortar:"
+         T_MODE_AUTO="Automático: quitar los márgenes en blanco (por lotes)"
+         T_MODE_MANUAL="Manual: ajustar con el ratón el rectángulo de recorte"
+         T_MARGIN="Margen a conservar alrededor del contenido (mm):"
+         T_FILE="Recortando"
+         T_SUF="recortado"
+         T_DONE="PDF recortados:"
+         T_ERR="No se pudieron recortar estos archivos (¿son PDF?):" ;;
+    gl*) T_TITLE="Recortar PDF"
+         T_PICK="Seleccione os PDF a recortar"
+         T_MODE_TEXT="Escolla como quere recortar:"
+         T_MODE_AUTO="Automático: quitar as marxes en branco (por lotes)"
+         T_MODE_MANUAL="Manual: axustar co rato o rectángulo de recorte"
+         T_MARGIN="Marxe a conservar arredor do contido (mm):"
+         T_FILE="Recortando"
+         T_SUF="recortado"
+         T_DONE="PDF recortados:"
+         T_ERR="Non se puideron recortar estes ficheiros (son PDF?):" ;;
+    *)   T_TITLE="Crop PDF"
+         T_PICK="Select the PDFs to crop"
+         T_MODE_TEXT="Choose how to crop:"
+         T_MODE_AUTO="Automatic: remove blank margins (batch)"
+         T_MODE_MANUAL="Manual: drag a crop rectangle with the mouse"
+         T_MARGIN="Margin to keep around the content (mm):"
+         T_FILE="Cropping"
+         T_SUF="cropped"
+         T_DONE="Cropped PDFs:"
+         T_ERR="These files could not be cropped (are they PDFs?):" ;;
+esac
+
+ruta=$(dirname "$(readlink -f "$0")")
+
+if [ $# -eq 0 ]; then
+    mapfile -t files < <(zenity --file-selection --multiple --separator=$'\n' \
+        --title="$T_PICK" --file-filter="PDF | *.pdf *.PDF")
+else
+    files=("$@")
+fi
+[ ${#files[@]} -eq 0 ] && exit 0
+
+modo=$(zenity --list --radiolist --title="$T_TITLE" --text="$T_MODE_TEXT" \
+    --column="" --column="" TRUE "$T_MODE_AUTO" FALSE "$T_MODE_MANUAL" \
+    --width=480 --height=260) || exit 0
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+errores="$tmp/errores" hechos="$tmp/hechos"
+
+if [ "$modo" = "$T_MODE_MANUAL" ]; then
+    # Manual: una ventana Tkinter por archivo; el propio recorta_manual.py
+    # aplica el rectángulo elegido a todas las páginas del documento.
+    for f in "${files[@]}"; do
+        base=$(basename "$f")
+        out="$(dirname "$f")/${base%.*}_$T_SUF.pdf"
+        if [ "$(file -b --mime-type "$f")" = "application/pdf" ] &&
+            python3 "$ruta/recorta_manual.py" "$f" "$out"; then
+            basename "$out" >>"$hechos"
+        else
+            rm -f "$out"
+            basename "$f" >>"$errores"
+        fi
+    done
+else
+    mm=$(zenity --scale --title="$T_TITLE" --text="$T_MARGIN" \
+        --min-value=0 --max-value=20 --value=5 --step=1) || exit 0
+    margen=$(awk "BEGIN{printf \"%.2f\", $mm * 72 / 25.4}")
+
+    (
+        total=${#files[@]}
+        n=0
+        for f in "${files[@]}"; do
+            echo "# $T_FILE: $(basename "$f")"
+            base=$(basename "$f")
+            out="$(dirname "$f")/${base%.*}_$T_SUF.pdf"
+            if [ "$(file -b --mime-type "$f")" = "application/pdf" ] &&
+                gs -dNOPAUSE -dBATCH -dQUIET -sDEVICE=bbox "$f" 2>"$tmp/bbox.txt" &&
+                python3 "$ruta/recorta.py" "$f" "$out" "$margen" "$tmp/bbox.txt" 2>/dev/null; then
+                basename "$out" >>"$hechos"
+            else
+                rm -f "$out"
+                basename "$f" >>"$errores"
+            fi
+            n=$((n + 1))
+            echo $((100 * n / total))
+        done
+    ) | zenity --progress --auto-close --title="$T_TITLE" --width=350
+fi
+
+[ -s "$hechos" ] && zenity --info --title="$T_TITLE" --text="$T_DONE\n\n$(cat "$hechos")"
+[ -s "$errores" ] && zenity --warning --title="$T_TITLE" --text="$T_ERR\n\n$(cat "$errores")"
+exit 0

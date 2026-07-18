@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Converts any audio file to MP3.
+    The result is saved next to the
+    original file.
+
+    Drag one or more files onto the
+    icon, or launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Convierte cualquier archivo de audio
+    a MP3. El resultado se guarda junto
+    al archivo original.
+
+    Arrastre uno o varios archivos sobre
+    el icono, o láncelo para elegirlos.
+  </Summary>
+  <Summary xml:lang="gl">
+    Converte calquera ficheiro de son
+    a MP3. O resultado gárdase a carón
+    do ficheiro orixinal.
+
+    Arrastre un ou varios ficheiros sobre
+    a icona, ou lánceo para escollelos.
+  </Summary>
+</AppInfo>

@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Shrinks PDF files by downsampling
+    their images (screen / e-book / print
+    quality). The result is saved next to
+    the original.
+
+    Drag one or more PDFs onto the
+    icon, or launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Reduce el tamaño de los PDF
+    recomprimiendo sus imágenes (calidad
+    pantalla / libro electrónico /
+    impresión). El resultado se guarda
+    junto al original.
+
+    Arrastre uno o varios PDF sobre
+    el icono, o láncelo para elegirlos.
+  </Summary>
+  <Summary xml:lang="gl">
+    Reduce o tamaño dos PDF
+    recomprimindo as súas imaxes (calidade
+    pantalla / libro electrónico /
+    impresión). O resultado gárdase
+    a carón do orixinal.
+
+    Arrastre un ou varios PDF sobre
+    a icona, ou lánceo para escollelos.
+  </Summary>
+</AppInfo>

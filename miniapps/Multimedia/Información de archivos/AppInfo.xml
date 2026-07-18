@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Shows technical information about
+    media files: codecs, duration,
+    resolution, bitrate...
+
+    Drag one or more files onto the
+    icon, or launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Muestra la información técnica de
+    archivos multimedia: códecs, duración,
+    resolución, tasa de bits...
+
+    Arrastre uno o varios archivos sobre
+    el icono, o láncelo para elegirlos.
+  </Summary>
+  <Summary xml:lang="gl">
+    Mostra a información técnica de
+    ficheiros multimedia: códecs, duración,
+    resolución, taxa de bits...
+
+    Arrastre un ou varios ficheiros sobre
+    a icona, ou lánceo para escollelos.
+  </Summary>
+</AppInfo>

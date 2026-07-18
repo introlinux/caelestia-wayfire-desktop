@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Turns a PDF into a booklet: pages
+    reordered and placed two per sheet,
+    ready to print double-sided (short
+    edge) and fold in half.
+
+    Drag a PDF onto the icon, or
+    launch it to pick one.
+  </Summary>
+  <Summary xml:lang="es">
+    Convierte un PDF en un folleto:
+    páginas reordenadas y montadas de dos
+    en dos, listo para imprimir a doble
+    cara (borde corto) y doblar por la
+    mitad.
+
+    Arrastre un PDF sobre el icono,
+    o láncelo para elegirlo.
+  </Summary>
+  <Summary xml:lang="gl">
+    Converte un PDF nun folleto:
+    páxinas reordenadas e montadas de
+    dúas en dúas, listo para imprimir a
+    dobre cara (bordo curto) e dobrar
+    pola metade.
+
+    Arrastre un PDF sobre a icona,
+    ou lánceo para escollelo.
+  </Summary>
+</AppInfo>

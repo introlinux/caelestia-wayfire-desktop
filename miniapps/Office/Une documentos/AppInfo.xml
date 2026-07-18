@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Joins several documents into a single
+    PDF, in the given order. Non-PDF files
+    (ODT, DOCX, ODP...) are converted
+    first with LibreOffice.
+
+    Drag the documents onto the icon,
+    or launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Une varios documentos en un único PDF,
+    en el orden dado. Los que no sean PDF
+    (ODT, DOCX, ODP...) se convierten
+    antes con LibreOffice.
+
+    Arrastre los documentos sobre el
+    icono, o láncelo para elegirlos.
+  </Summary>
+  <Summary xml:lang="gl">
+    Une varios documentos nun único PDF,
+    na orde dada. Os que non sexan PDF
+    (ODT, DOCX, ODP...) convértense
+    antes con LibreOffice.
+
+    Arrastre os documentos sobre a
+    icona, ou lánceo para escollelos.
+  </Summary>
+</AppInfo>

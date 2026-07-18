@@ -1,0 +1,93 @@
+#!/bin/bash
+# Recupera archivos borrados de una unidad (pendrive, tarjeta, disco) con
+# foremost (carving no interactivo). Pide la unidad y la carpeta de destino;
+# el resultado queda ordenado por tipo de archivo en subcarpetas.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Recuperar archivos borrados"
+         T_TEXT="Elija la unidad de la que recuperar archivos:"
+         C_DEV="Unidad" C_SIZE="Tamaño" C_LABEL="Etiqueta" C_MOUNT="Montada en"
+         T_DEST="Elija la carpeta donde guardar lo recuperado"
+         T_SAMEDEV="La carpeta de destino está en la misma unidad que se va a examinar.\nElija una carpeta en OTRO disco."
+         T_DOING="Examinando la unidad y recuperando archivos...\nEsta operación puede tardar bastante."
+         T_NONE="No se recuperó ningún archivo."
+         T_DONE="archivos recuperados, ordenados por tipo, en:"
+         T_ERR="La recuperación no se pudo ejecutar (¿autenticación cancelada?)." ;;
+    gl*) T_TITLE="Recuperar ficheiros borrados"
+         T_TEXT="Escolla a unidade da que recuperar ficheiros:"
+         C_DEV="Unidade" C_SIZE="Tamaño" C_LABEL="Etiqueta" C_MOUNT="Montada en"
+         T_DEST="Escolla o cartafol onde gardar o recuperado"
+         T_SAMEDEV="O cartafol de destino está na mesma unidade que se vai examinar.\nEscolla un cartafol nOUTRO disco."
+         T_DOING="Examinando a unidade e recuperando ficheiros...\nEsta operación pode tardar bastante."
+         T_NONE="Non se recuperou ningún ficheiro."
+         T_DONE="ficheiros recuperados, ordenados por tipo, en:"
+         T_ERR="A recuperación non se puido executar (autenticación cancelada?)." ;;
+    *)   T_TITLE="Recover deleted files"
+         T_TEXT="Choose the drive to recover files from:"
+         C_DEV="Drive" C_SIZE="Size" C_LABEL="Label" C_MOUNT="Mounted on"
+         T_DEST="Choose the folder where recovered files will be saved"
+         T_SAMEDEV="The destination folder is on the same drive being scanned.\nPick a folder on a DIFFERENT disk."
+         T_DOING="Scanning the drive and recovering files...\nThis may take a long time."
+         T_NONE="No files were recovered."
+         T_DONE="files recovered, sorted by type, in:"
+         T_ERR="Recovery could not run (authentication cancelled?)." ;;
+esac
+
+# ── 1. Unidad a examinar ─────────────────────────────────────────────────
+# Si se arrastró una carpeta montada, deducir su dispositivo.
+dev=""
+if [ $# -gt 0 ] && [ -e "$1" ]; then
+    dev=$(df --output=source "$1" 2>/dev/null | tail -1)
+    [[ $dev == /dev/* ]] || dev=""
+fi
+
+if [ -z "$dev" ]; then
+    filas=()
+    while read -r name type fstype size label mount; do
+        [ "$type" = "part" ] || { [ "$type" = "disk" ] && [ "$fstype" != "-" ]; } || continue
+        filas+=(FALSE "$name" "$size" "${label//\\x20/ }" "${mount//\\x20/ }")
+    done < <(lsblk -rpno NAME,TYPE,FSTYPE,SIZE,LABEL,MOUNTPOINT |
+        awk '{print $1, $2, ($3==""?"-":$3), $4, ($5==""?"-":$5), ($6==""?"-":$6)}')
+    [ ${#filas[@]} -eq 0 ] && exit 1
+    dev=$(zenity --list --radiolist --title="$T_TITLE" --text="$T_TEXT" \
+        --column="" --column="$C_DEV" --column="$C_SIZE" --column="$C_LABEL" --column="$C_MOUNT" \
+        "${filas[@]}" --width=560 --height=380) || exit 0
+fi
+[ -z "$dev" ] && exit 0
+
+# ── 2. Carpeta de destino (en otro disco) ────────────────────────────────
+destino=$(zenity --file-selection --directory --title="$T_DEST") || exit 0
+dev_dest=$(df --output=source "$destino" | tail -1)
+if [ -b "$dev" ] && [ "${dev_dest%%[0-9]*}" = "${dev%%[0-9]*}" ]; then
+    zenity --error --title="$T_TITLE" --text="$T_SAMEDEV"
+    exit 1
+fi
+salida="$destino/Recuperados_$(date +%Y%m%d_%H%M)"
+
+# ── 3. foremost con privilegios (diálogo gráfico de contraseña) ──────────
+# foremost crea la carpeta de salida y clasifica por tipo él mismo.
+rc=$(mktemp)
+trap 'rm -f "$rc"' EXIT
+(
+    pkexec bash -c "foremost -i $(printf %q "$dev") -o $(printf %q "$salida") &&
+        chown -R $(id -u):$(id -g) $(printf %q "$salida")" || echo 1 >"$rc"
+    echo 100
+) | zenity --progress --pulsate --auto-close --title="$T_TITLE" --text="$T_DOING" --width=400
+
+if [ -s "$rc" ] && [ ! -d "$salida" ]; then
+    zenity --error --title="$T_TITLE" --text="$T_ERR"
+    exit 1
+fi
+
+# ── 4. Resultado ─────────────────────────────────────────────────────────
+find "$salida" -depth -type d -empty -delete 2>/dev/null
+total=$(find "$salida" -type f ! -name 'audit.txt' 2>/dev/null | wc -l)
+if [ "$total" -eq 0 ]; then
+    rm -rf "$salida"
+    zenity --info --title="$T_TITLE" --text="$T_NONE"
+else
+    zenity --info --title="$T_TITLE" --text="$total $T_DONE\n$salida" --width=400
+    gio open "$salida" 2>/dev/null
+fi
+exit 0

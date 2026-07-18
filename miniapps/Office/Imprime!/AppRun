@@ -1,0 +1,74 @@
+#!/bin/bash
+# Convierte un lote de documentos a PDF, los une en un único archivo y lo abre
+# en el visor listo para imprimir (Ctrl+P). Los PDF se toman tal cual.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Imprime!"
+         T_PICK="Seleccione los documentos a imprimir"
+         T_CONV="Preparando"
+         T_ERRC="Estos documentos no se pudieron convertir y quedarán fuera:"
+         T_NONE="Ningún documento se pudo preparar."
+         T_ERRJOIN="No se pudo crear el PDF." ;;
+    gl*) T_TITLE="Imprime!"
+         T_PICK="Seleccione os documentos a imprimir"
+         T_CONV="Preparando"
+         T_ERRC="Estes documentos non se puideron converter e quedarán fóra:"
+         T_NONE="Ningún documento se puido preparar."
+         T_ERRJOIN="Non se puido crear o PDF." ;;
+    *)   T_TITLE="Print!"
+         T_PICK="Select the documents to print"
+         T_CONV="Preparing"
+         T_ERRC="These documents could not be converted and will be left out:"
+         T_NONE="No document could be prepared."
+         T_ERRJOIN="The PDF could not be created." ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t files < <(zenity --file-selection --multiple --separator=$'\n' --title="$T_PICK")
+else
+    files=("$@")
+fi
+[ ${#files[@]} -eq 0 ] && exit 0
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+lista="$tmp/lista" errores="$tmp/errores"
+
+(
+    total=${#files[@]}
+    n=0
+    for f in "${files[@]}"; do
+        echo "# $T_CONV: $(basename "$f")"
+        if [ "$(file -b --mime-type "$f")" = "application/pdf" ]; then
+            printf '%s\n' "$f" >>"$lista"
+        elif soffice --headless --convert-to pdf --outdir "$tmp/conv" "$f" >/dev/null 2>&1; then
+            base=$(basename "$f")
+            pdf="$tmp/conv/${base%.*}.pdf"
+            if [ -f "$pdf" ]; then printf '%s\n' "$pdf" >>"$lista"; else basename "$f" >>"$errores"; fi
+        else
+            basename "$f" >>"$errores"
+        fi
+        n=$((n + 1))
+        echo $((100 * n / total))
+    done
+) | zenity --progress --auto-close --title="$T_TITLE" --width=350
+
+[ -s "$errores" ] && zenity --warning --title="$T_TITLE" --text="$T_ERRC\n\n$(cat "$errores")"
+
+mapfile -t pdfs <"$lista" 2>/dev/null
+if [ ${#pdfs[@]} -eq 0 ]; then
+    zenity --error --title="$T_TITLE" --text="$T_NONE"
+    exit 1
+fi
+
+# El unido se deja fuera del directorio temporal (que se borra al salir);
+# /tmp lo limpia el sistema al reiniciar.
+salida=$(mktemp /tmp/imprimir-XXXXXX.pdf)
+if ! qpdf --empty --pages "${pdfs[@]}" -- "$salida" 2>"$tmp/qpdf.err"; then
+    rm -f "$salida"
+    zenity --error --title="$T_TITLE" --text="$T_ERRJOIN\n\n$(head -n5 "$tmp/qpdf.err")"
+    exit 1
+fi
+
+exec papers "$salida"

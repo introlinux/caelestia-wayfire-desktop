@@ -1,0 +1,74 @@
+#!/bin/bash
+# Redimensiona imágenes a la resolución elegida (manteniendo proporciones) y
+# guarda las copias en una subcarpeta con el nombre de la resolución.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Redimensionar imágenes"
+         T_PICK="Seleccione las imágenes a redimensionar"
+         T_TEXT="Elija la resolución máxima (se mantienen las proporciones):"
+         T_COL="Resolución"
+         T_OTHER="Otra..."
+         T_ASK="Escriba la resolución deseada (ej. 1600x900):"
+         T_BAD="Resolución no válida. Use el formato ANCHOxALTO, por ejemplo 1600x900."
+         T_FILE="Imagen"
+         T_ERR="No se pudieron redimensionar estos archivos:" ;;
+    gl*) T_TITLE="Redimensionar imaxes"
+         T_PICK="Seleccione as imaxes a redimensionar"
+         T_TEXT="Escolla a resolución máxima (mantéñense as proporcións):"
+         T_COL="Resolución"
+         T_OTHER="Outra..."
+         T_ASK="Escriba a resolución desexada (ex. 1600x900):"
+         T_BAD="Resolución non válida. Use o formato ANCHOxALTO, por exemplo 1600x900."
+         T_FILE="Imaxe"
+         T_ERR="Non se puideron redimensionar estes ficheiros:" ;;
+    *)   T_TITLE="Resize images"
+         T_PICK="Select the images to resize"
+         T_TEXT="Choose the maximum resolution (aspect ratio is kept):"
+         T_COL="Resolution"
+         T_OTHER="Other..."
+         T_ASK="Type the desired resolution (e.g. 1600x900):"
+         T_BAD="Invalid resolution. Use WIDTHxHEIGHT, for example 1600x900."
+         T_FILE="Image"
+         T_ERR="These files could not be resized:" ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t files < <(zenity --file-selection --multiple --separator=$'\n' --title="$T_PICK")
+else
+    files=("$@")
+fi
+[ ${#files[@]} -eq 0 ] && exit 0
+
+tam=$(zenity --list --radiolist --title="$T_TITLE" --text="$T_TEXT" \
+    --column="" --column="$T_COL" \
+    FALSE "640x480" FALSE "800x600" FALSE "1024x768" \
+    TRUE "1280x720" FALSE "1920x1080" FALSE "2560x1440" \
+    FALSE "$T_OTHER" --height=500) || exit 0
+
+if [ "$tam" = "$T_OTHER" ]; then
+    tam=$(zenity --entry --title="$T_TITLE" --text="$T_ASK" --entry-text="1600x900") || exit 0
+    tam=${tam,,}
+    if ! [[ $tam =~ ^[0-9]+x[0-9]+$ ]]; then
+        zenity --error --title="$T_TITLE" --text="$T_BAD"
+        exit 1
+    fi
+fi
+
+errores=$(mktemp)
+trap 'rm -f "$errores"' EXIT
+
+total=${#files[@]}
+n=0
+for f in "${files[@]}"; do
+    echo "# $T_FILE: $(basename "$f")"
+    destdir="$(dirname "$f")/$tam"
+    mkdir -p "$destdir"
+    magick "$f" -resize "$tam" -quality 90 "$destdir/$(basename "$f")" 2>/dev/null \
+        || basename "$f" >>"$errores"
+    n=$((n + 1))
+    echo $((100 * n / total))
+done | zenity --progress --auto-close --title="$T_TITLE" --width=350
+
+[ -s "$errores" ] && zenity --warning --title="$T_TITLE" --text="$T_ERR\n\n$(cat "$errores")"
+exit 0

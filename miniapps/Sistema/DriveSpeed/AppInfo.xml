@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Measures the sequential read and
+    write speed of a mounted drive
+    (USB stick, card, disk) using a
+    256 MB temporary file.
+
+    Drag a folder of the drive onto the
+    icon, or launch it to pick the drive.
+  </Summary>
+  <Summary xml:lang="es">
+    Mide la velocidad de lectura y
+    escritura secuencial de una unidad
+    montada (pendrive, tarjeta, disco)
+    usando un archivo temporal de 256 MB.
+
+    Arrastre una carpeta de la unidad
+    sobre el icono, o láncelo para
+    elegir la unidad.
+  </Summary>
+  <Summary xml:lang="gl">
+    Mide a velocidade de lectura e
+    escritura secuencial dunha unidade
+    montada (pendrive, tarxeta, disco)
+    usando un ficheiro temporal de 256 MB.
+
+    Arrastre un cartafol da unidade
+    sobre a icona, ou lánceo para
+    escoller a unidade.
+  </Summary>
+</AppInfo>

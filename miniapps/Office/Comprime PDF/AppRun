@@ -1,0 +1,107 @@
+#!/bin/bash
+# Comprime PDF con Ghostscript. El resultado se guarda junto al original
+# con el sufijo "_comprimido"; al final muestra el tamaño antes → después.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Comprime PDF"
+         T_PICK="Seleccione los PDF a comprimir"
+         T_TEXT="Elija el nivel de compresión:"
+         T_COL="Nivel"
+         L1="Pantalla (72 ppp, máxima compresión)"
+         L2="Libro electrónico (150 ppp, equilibrado)"
+         L3="Impresión (300 ppp, alta calidad)"
+         L4="Personalizado (ajuste fino con control deslizante)"
+         T_DPI="Resolución de las imágenes (ppp):"
+         T_FILE="Comprimiendo"
+         T_SUF="comprimido"
+         T_DONE="Resultado:"
+         T_ERR="No se pudieron comprimir estos archivos (¿son PDF?):" ;;
+    gl*) T_TITLE="Comprime PDF"
+         T_PICK="Seleccione os PDF a comprimir"
+         T_TEXT="Escolla o nivel de compresión:"
+         T_COL="Nivel"
+         L1="Pantalla (72 ppp, máxima compresión)"
+         L2="Libro electrónico (150 ppp, equilibrado)"
+         L3="Impresión (300 ppp, alta calidade)"
+         L4="Personalizado (axuste fino con control desprazable)"
+         T_DPI="Resolución das imaxes (ppp):"
+         T_FILE="Comprimindo"
+         T_SUF="comprimido"
+         T_DONE="Resultado:"
+         T_ERR="Non se puideron comprimir estes ficheiros (son PDF?):" ;;
+    *)   T_TITLE="Compress PDF"
+         T_PICK="Select the PDFs to compress"
+         T_TEXT="Choose the compression level:"
+         T_COL="Level"
+         L1="Screen (72 dpi, maximum compression)"
+         L2="E-book (150 dpi, balanced)"
+         L3="Print (300 dpi, high quality)"
+         L4="Custom (fine adjustment with a slider)"
+         T_DPI="Image resolution (dpi):"
+         T_FILE="Compressing"
+         T_SUF="compressed"
+         T_DONE="Result:"
+         T_ERR="These files could not be compressed (are they PDFs?):" ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t files < <(zenity --file-selection --multiple --separator=$'\n' \
+        --title="$T_PICK" --file-filter="PDF | *.pdf *.PDF")
+else
+    files=("$@")
+fi
+[ ${#files[@]} -eq 0 ] && exit 0
+
+nivel=$(zenity --list --radiolist --title="$T_TITLE" --text="$T_TEXT" \
+    --column="" --column="$T_COL" FALSE "$L1" TRUE "$L2" FALSE "$L3" FALSE "$L4" \
+    --width=460 --height=320) || exit 0
+
+if [ "$nivel" = "$L4" ]; then
+    # Control deslizante: ajusta directamente la resolución de las imágenes
+    # (72-300 ppp) en vez de elegir entre los 3 presets fijos de Ghostscript.
+    dpi=$(yad --form --title="$T_TITLE" --width=420 \
+        --field="$T_DPI:SCL" "150!30!300!5!10") || exit 0
+    dpi=${dpi%%|*}
+    [ -z "$dpi" ] && exit 0
+    gs_args=(-dPDFSETTINGS=/printer \
+        -dDownsampleColorImages=true -dColorImageResolution="$dpi" \
+        -dDownsampleGrayImages=true -dGrayImageResolution="$dpi" \
+        -dDownsampleMonoImages=true -dMonoImageResolution=$((dpi * 2)))
+else
+    case $nivel in
+        "$L1") preset=screen ;;
+        "$L3") preset=printer ;;
+        *)     preset=ebook ;;
+    esac
+    gs_args=(-dPDFSETTINGS=/$preset)
+fi
+
+errores=$(mktemp) resumen=$(mktemp)
+trap 'rm -f "$errores" "$resumen"' EXIT
+
+(
+    total=${#files[@]}
+    n=0
+    for f in "${files[@]}"; do
+        echo "# $T_FILE: $(basename "$f")"
+        base=$(basename "$f")
+        out="$(dirname "$f")/${base%.*}_$T_SUF.pdf"
+        if [ "$(file -b --mime-type "$f")" = "application/pdf" ] &&
+            gs -q -sDEVICE=pdfwrite -dCompatibilityLevel=1.5 "${gs_args[@]}" \
+                -dNOPAUSE -dBATCH -sOutputFile="$out" "$f" 2>/dev/null; then
+            antes=$(du -h "$f" | cut -f1)
+            despues=$(du -h "$out" | cut -f1)
+            echo "$base: $antes → $despues" >>"$resumen"
+        else
+            rm -f "$out"
+            basename "$f" >>"$errores"
+        fi
+        n=$((n + 1))
+        echo $((100 * n / total))
+    done
+) | zenity --progress --auto-close --title="$T_TITLE" --width=350
+
+[ -s "$resumen" ] && zenity --info --title="$T_TITLE" --text="$T_DONE\n\n$(cat "$resumen")"
+[ -s "$errores" ] && zenity --warning --title="$T_TITLE" --text="$T_ERR\n\n$(cat "$errores")"
+exit 0

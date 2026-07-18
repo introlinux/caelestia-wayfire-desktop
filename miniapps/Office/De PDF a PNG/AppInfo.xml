@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Converts every page of a PDF into
+    PNG images (150 dpi), inside a
+    "name_png" folder next to the PDF.
+
+    Drag one or more PDFs onto the
+    icon, or launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Convierte cada página de un PDF en
+    imágenes PNG (150 ppp), dentro de una
+    carpeta "nombre_png" junto al PDF.
+
+    Arrastre uno o varios PDF sobre
+    el icono, o láncelo para elegirlos.
+  </Summary>
+  <Summary xml:lang="gl">
+    Converte cada páxina dun PDF en
+    imaxes PNG (150 ppp), dentro dun
+    cartafol "nome_png" a carón do PDF.
+
+    Arrastre un ou varios PDF sobre
+    a icona, ou lánceo para escollelos.
+  </Summary>
+</AppInfo>

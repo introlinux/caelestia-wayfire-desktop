@@ -1,0 +1,59 @@
+#!/bin/bash
+# Convierte archivos de audio a MP3 (VBR ~190 kbps), dejando el resultado
+# junto al original. Los que ya son MP3 se omiten.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Convirtiendo a MP3..."
+         T_PICK="Seleccione los archivos de audio"
+         T_FILE="Archivo"
+         T_ERR="No se pudieron convertir estos archivos:"
+         T_SKIP="Estos archivos ya eran MP3 y no se han tocado:" ;;
+    gl*) T_TITLE="Convertendo a MP3..."
+         T_PICK="Seleccione os ficheiros de son"
+         T_FILE="Ficheiro"
+         T_ERR="Non se puideron converter estes ficheiros:"
+         T_SKIP="Estes ficheiros xa eran MP3 e non se tocaron:" ;;
+    *)   T_TITLE="Converting to MP3..."
+         T_PICK="Select the audio files"
+         T_FILE="File"
+         T_ERR="These files could not be converted:"
+         T_SKIP="These files were already MP3 and were left untouched:" ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t files < <(zenity --file-selection --multiple --separator=$'\n' --title="$T_PICK")
+else
+    files=("$@")
+fi
+[ ${#files[@]} -eq 0 ] && exit 0
+
+# Nombre de salida junto al original, sin machacar archivos existentes.
+salida_libre() {
+    local base="${1%.*}" out="${1%.*}.mp3" n=1
+    while [ -e "$out" ]; do out="$base-$n.mp3"; n=$((n + 1)); done
+    printf '%s' "$out"
+}
+
+errores=$(mktemp) omitidos=$(mktemp)
+trap 'rm -f "$errores" "$omitidos"' EXIT
+
+total=${#files[@]}
+n=0
+for f in "${files[@]}"; do
+    echo "# $T_FILE: $(basename "$f")"
+    if [ "$(file -b --mime-type "$f")" = "audio/mpeg" ]; then
+        basename "$f" >>"$omitidos"
+    else
+        out=$(salida_libre "$f")
+        ffmpeg -nostdin -hide_banner -loglevel error -i "$f" -vn \
+            -codec:a libmp3lame -q:a 2 "$out" 2>/dev/null \
+            || { rm -f "$out"; basename "$f" >>"$errores"; }
+    fi
+    n=$((n + 1))
+    echo $((100 * n / total))
+done | zenity --progress --auto-close --title="$T_TITLE" --width=350
+
+[ -s "$omitidos" ] && zenity --info --title="$T_TITLE" --text="$T_SKIP\n\n$(cat "$omitidos")"
+[ -s "$errores" ] && zenity --warning --title="$T_TITLE" --text="$T_ERR\n\n$(cat "$errores")"
+exit 0

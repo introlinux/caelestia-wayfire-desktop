@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Fixes file names with broken accents
+    (old Windows-1252 encoding) by
+    renaming them to UTF-8, recursively.
+    Shows a preview before touching
+    anything.
+
+    Drag files or a folder onto the icon,
+    or launch it to pick a folder.
+  </Summary>
+  <Summary xml:lang="es">
+    Repara nombres de archivo con acentos
+    rotos (codificación antigua Windows-1252)
+    renombrándolos a UTF-8, recursivamente.
+    Muestra una vista previa antes de
+    tocar nada.
+
+    Arrastre archivos o una carpeta sobre
+    el icono, o láncelo para elegir carpeta.
+  </Summary>
+  <Summary xml:lang="gl">
+    Repara nomes de ficheiro con acentos
+    rotos (codificación antiga Windows-1252)
+    renomeándoos a UTF-8, recursivamente.
+    Mostra unha vista previa antes de
+    tocar nada.
+
+    Arrastre ficheiros ou un cartafol sobre
+    a icona, ou lánceo para escoller cartafol.
+  </Summary>
+</AppInfo>

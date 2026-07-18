@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Recovers deleted files from a drive
+    (USB stick, memory card, disk) using
+    photorec. Recovered files are sorted
+    by type into subfolders in the chosen
+    destination.
+
+    Drag the mounted drive folder onto
+    the icon, or launch it to pick the
+    drive from a list.
+  </Summary>
+  <Summary xml:lang="es">
+    Recupera archivos borrados de una
+    unidad (pendrive, tarjeta, disco)
+    usando photorec. Lo recuperado se
+    ordena por tipo en subcarpetas del
+    destino elegido.
+
+    Arrastre la carpeta de la unidad
+    montada sobre el icono, o láncelo
+    para elegir la unidad de una lista.
+  </Summary>
+  <Summary xml:lang="gl">
+    Recupera ficheiros borrados dunha
+    unidade (pendrive, tarxeta, disco)
+    usando photorec. O recuperado
+    ordénase por tipo en subcartafoles
+    do destino escollido.
+
+    Arrastre o cartafol da unidade
+    montada sobre a icona, ou lánceo
+    para escoller a unidade dunha lista.
+  </Summary>
+</AppInfo>

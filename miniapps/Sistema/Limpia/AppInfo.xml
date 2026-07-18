@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Removes personal data traces before
+    handing over the computer: caches,
+    trash, recent files, editor sessions,
+    shell history, browsers (optional),
+    system logs and saved Wi-Fi networks.
+    Everything is chosen from a checklist
+    and confirmed first.
+  </Summary>
+  <Summary xml:lang="es">
+    Elimina rastros de datos personales
+    antes de ceder el equipo: cachés,
+    papelera, recientes, sesiones de
+    editores, historial de terminal,
+    navegadores (opcional), logs del
+    sistema y redes Wi-Fi guardadas. Todo
+    se elige en una lista de casillas y
+    se confirma antes.
+  </Summary>
+  <Summary xml:lang="gl">
+    Elimina rastros de datos persoais
+    antes de ceder o equipo: cachés,
+    papeleira, recentes, sesións de
+    editores, historial de terminal,
+    navegadores (opcional), logs do
+    sistema e redes Wi-Fi gardadas. Todo
+    se escolle nunha lista de casas e
+    confírmase antes.
+  </Summary>
+</AppInfo>

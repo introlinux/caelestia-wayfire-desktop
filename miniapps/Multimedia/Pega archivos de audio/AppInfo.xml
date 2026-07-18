@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Joins several audio files into one,
+    in the given order. Files sharing a
+    codec are joined without re-encoding;
+    otherwise the result is an MP3.
+
+    Drag the audio files onto the icon,
+    or launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Une varios archivos de audio en uno,
+    en el orden dado. Si comparten códec
+    se pegan sin recodificar; si no, el
+    resultado es un MP3.
+
+    Arrastre los audios sobre el icono,
+    o láncelo para elegirlos.
+  </Summary>
+  <Summary xml:lang="gl">
+    Une varios ficheiros de son nun só,
+    na orde dada. Se comparten códec
+    péganse sen recodificar; se non, o
+    resultado é un MP3.
+
+    Arrastre os sons sobre a icona,
+    ou lánceo para escollelos.
+  </Summary>
+</AppInfo>

@@ -1,0 +1,3 @@
+#!/bin/bash
+# Abre PDF Arranger para reordenar, rotar, recortar o borrar páginas de un PDF.
+exec pdfarranger "$@"

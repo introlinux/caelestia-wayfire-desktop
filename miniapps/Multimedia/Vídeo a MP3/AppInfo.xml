@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Extracts the audio track from video
+    files to MP3, saved next to the
+    original (no re-encoding when the
+    track is already MP3).
+
+    Drag one or more videos onto the
+    icon, or launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Extrae la pista de audio de archivos
+    de vídeo a MP3, junto al original
+    (sin recodificar si la pista ya
+    es MP3).
+
+    Arrastre uno o varios vídeos sobre
+    el icono, o láncelo para elegirlos.
+  </Summary>
+  <Summary xml:lang="gl">
+    Extrae a pista de son de ficheiros
+    de vídeo a MP3, a carón do orixinal
+    (sen recodificar se a pista xa
+    é MP3).
+
+    Arrastre un ou varios vídeos sobre
+    a icona, ou lánceo para escollelos.
+  </Summary>
+</AppInfo>

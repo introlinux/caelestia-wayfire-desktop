@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Schedules a power-off or reboot in N
+    minutes. Launch it again to cancel a
+    pending schedule.
+  </Summary>
+  <Summary xml:lang="es">
+    Programa un apagado o reinicio del
+    equipo dentro de N minutos. Láncelo
+    de nuevo para cancelar una
+    programación pendiente.
+  </Summary>
+  <Summary xml:lang="gl">
+    Programa un apagado ou reinicio do
+    equipo dentro de N minutos. Lánceo
+    de novo para cancelar unha
+    programación pendente.
+  </Summary>
+</AppInfo>

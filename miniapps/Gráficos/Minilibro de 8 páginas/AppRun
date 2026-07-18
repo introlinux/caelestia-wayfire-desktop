@@ -1,0 +1,92 @@
+#!/bin/bash
+# Convierte un documento de 8 páginas (PDF u ODT/DOCX...) en una hoja A4 con
+# las páginas montadas en cuadrícula 2x4 para plegarla como minilibro.
+# Si hay más de 8 páginas se generan varias hojas (una por cada grupo de 8).
+set -u
+
+case $LANG in
+    es*) T_TITLE="Minilibro de 8 páginas"
+         T_PICK="Seleccione el documento (idealmente de 8 páginas)"
+         T_DOING="Montando el minilibro..."
+         T_SAVETIT="¿Dónde guardamos el minilibro?"
+         T_DONE="Minilibro creado.\n\nImprima la hoja, hágale un corte horizontal en el centro (entre las dos columnas centrales) y pliéguela para formar el librito."
+         T_ERR="No se pudo procesar el documento." ;;
+    gl*) T_TITLE="Minilibro de 8 páxinas"
+         T_PICK="Seleccione o documento (idealmente de 8 páxinas)"
+         T_DOING="Montando o minilibro..."
+         T_SAVETIT="Onde gardamos o minilibro?"
+         T_DONE="Minilibro creado.\n\nImprima a folla, fágalle un corte horizontal no centro (entre as dúas columnas centrais) e préguea para formar o libriño."
+         T_ERR="Non se puido procesar o documento." ;;
+    *)   T_TITLE="8-page minibook"
+         T_PICK="Select the document (ideally 8 pages)"
+         T_DOING="Building the minibook..."
+         T_SAVETIT="Where do we save the minibook?"
+         T_DONE="Minibook created.\n\nPrint the sheet, make a horizontal cut in the middle (between the two central columns) and fold it into the little book."
+         T_ERR="The document could not be processed." ;;
+esac
+
+if [ $# -eq 0 ]; then
+    f=$(zenity --file-selection --title="$T_PICK") || exit 0
+    set -- "$f"
+fi
+doc="$1"
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+resultado="$tmp/minilibro.pdf"
+(
+    # Si no es PDF, convertir primero con LibreOffice.
+    pdf="$doc"
+    if [ "$(file -b --mime-type "$doc")" != "application/pdf" ]; then
+        soffice --headless --convert-to pdf --outdir "$tmp" "$doc" >/dev/null 2>&1
+        base=$(basename "$doc")
+        pdf="$tmp/${base%.*}.pdf"
+        [ -f "$pdf" ] || exit 1
+    fi
+
+    # Páginas a PNG (100 ppp: suficiente para celdas de 1/8 de A4).
+    pdftoppm -png -r 100 "$pdf" "$tmp/pag" || exit 1
+    mapfile -t paginas < <(ls "$tmp"/pag-*.png 2>/dev/null | sort)
+    [ ${#paginas[@]} -eq 0 ] && exit 1
+
+    # Página en blanco para rellenar el último grupo de 8.
+    magick -size 827x1169 xc:white "$tmp/blanco.png"
+    while [ $((${#paginas[@]} % 8)) -ne 0 ]; do paginas+=("$tmp/blanco.png"); done
+
+    # Cuadrícula 2x4 en A4 vertical a 150 ppp (celdas de 620x438):
+    # columna izquierda (giradas +90°): páginas 8,1,2,3
+    # columna derecha (giradas -90°):   páginas 7,6,5,4
+    hojas=()
+    grupo=0
+    while [ $((grupo * 8)) -lt ${#paginas[@]} ]; do
+        b=$((grupo * 8))
+        hoja="$tmp/hoja-$grupo.png"
+        magick -size 1240x1752 xc:white \
+            \( "${paginas[b+7]}" -rotate 90  -resize '620x438!' \) -geometry +0+0    -composite \
+            \( "${paginas[b+0]}" -rotate 90  -resize '620x438!' \) -geometry +0+438  -composite \
+            \( "${paginas[b+1]}" -rotate 90  -resize '620x438!' \) -geometry +0+876  -composite \
+            \( "${paginas[b+2]}" -rotate 90  -resize '620x438!' \) -geometry +0+1314 -composite \
+            \( "${paginas[b+6]}" -rotate -90 -resize '620x438!' \) -geometry +620+0    -composite \
+            \( "${paginas[b+5]}" -rotate -90 -resize '620x438!' \) -geometry +620+438  -composite \
+            \( "${paginas[b+4]}" -rotate -90 -resize '620x438!' \) -geometry +620+876  -composite \
+            \( "${paginas[b+3]}" -rotate -90 -resize '620x438!' \) -geometry +620+1314 -composite \
+            "$hoja" || exit 1
+        hojas+=("$hoja")
+        grupo=$((grupo + 1))
+    done
+
+    magick "${hojas[@]}" -units PixelsPerInch -density 150 "$resultado"
+) | zenity --progress --pulsate --auto-close --title="$T_TITLE" --text="$T_DOING" --width=350
+
+if [ ! -s "$resultado" ]; then
+    zenity --error --title="$T_TITLE" --text="$T_ERR"
+    exit 1
+fi
+
+base=$(basename "$doc")
+destino=$(zenity --file-selection --save --filename="${base%.*}_minilibro.pdf" --title="$T_SAVETIT") || exit 0
+case $destino in *.pdf | *.PDF) ;; *) destino="$destino.pdf" ;; esac
+cp "$resultado" "$destino"
+zenity --info --title="$T_TITLE" --text="$T_DONE"
+exit 0

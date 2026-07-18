@@ -1,0 +1,79 @@
+#!/bin/bash
+# Calcula sumas de verificación (MD5 o SHA-256) de archivos y carpetas
+# (recursivamente) y las muestra en pantalla o las guarda en un archivo.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Suma de verificación"
+         T_PICK="Seleccione archivos o carpetas"
+         T_TEXT="Elija el algoritmo y qué hacer con el resultado:"
+         T_ALG="Algoritmo"
+         T_MODE="Resultado"
+         T_SHOW="Mostrar en pantalla"
+         T_SAVE="Guardar en un archivo"
+         T_DOING="Calculando"
+         T_SAVETIT="¿Dónde guardamos el resultado?" ;;
+    gl*) T_TITLE="Suma de verificación"
+         T_PICK="Seleccione ficheiros ou cartafoles"
+         T_TEXT="Escolla o algoritmo e que facer co resultado:"
+         T_ALG="Algoritmo"
+         T_MODE="Resultado"
+         T_SHOW="Mostrar na pantalla"
+         T_SAVE="Gardar nun ficheiro"
+         T_DOING="Calculando"
+         T_SAVETIT="Onde gardamos o resultado?" ;;
+    *)   T_TITLE="Checksum"
+         T_PICK="Select files or folders"
+         T_TEXT="Choose the algorithm and what to do with the result:"
+         T_ALG="Algorithm"
+         T_MODE="Result"
+         T_SHOW="Display on screen"
+         T_SAVE="Save to a file"
+         T_DOING="Computing"
+         T_SAVETIT="Where do we save the result?" ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t targets < <(zenity --file-selection --multiple --separator=$'\n' --title="$T_PICK")
+else
+    targets=("$@")
+fi
+[ ${#targets[@]} -eq 0 ] && exit 0
+
+opciones=$(zenity --forms --title="$T_TITLE" --text="$T_TEXT" \
+    --add-combo="$T_ALG" --combo-values="MD5|SHA-256" \
+    --add-combo="$T_MODE" --combo-values="$T_SHOW|$T_SAVE") || exit 0
+
+alg=${opciones%%|*}
+modo=${opciones#*|}
+[ -z "$alg" ] && alg="MD5"
+[ -z "$modo" ] && modo="$T_SHOW"
+
+if [ "$alg" = "SHA-256" ]; then herramienta=sha256sum; ext=sha256; else herramienta=md5sum; ext=md5; fi
+
+# Lista plana de archivos (las carpetas se recorren recursivamente).
+lista=$(mktemp) resultado=$(mktemp)
+trap 'rm -f "$lista" "$resultado"' EXIT
+for t in "${targets[@]}"; do
+    if [ -d "$t" ]; then find "$t" -type f -print >>"$lista"; else printf '%s\n' "$t" >>"$lista"; fi
+done
+
+total=$(wc -l <"$lista")
+[ "$total" -eq 0 ] && exit 0
+
+n=0
+while IFS= read -r f; do
+    echo "# $T_DOING: $(basename "$f")"
+    $herramienta "$f" >>"$resultado" 2>/dev/null
+    n=$((n + 1))
+    echo $((100 * n / total))
+done <"$lista" | zenity --progress --auto-close --title="$T_TITLE" --width=350
+
+if [ "$modo" = "$T_SAVE" ]; then
+    nombre="$(basename "${targets[0]}").$ext"
+    destino=$(zenity --file-selection --save --filename="$nombre" --title="$T_SAVETIT") || exit 0
+    cp "$resultado" "$destino"
+else
+    zenity --text-info --title="$T_TITLE ($alg)" --filename="$resultado" --width=750 --height=450
+fi
+exit 0

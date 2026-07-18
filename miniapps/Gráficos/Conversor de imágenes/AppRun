@@ -1,0 +1,77 @@
+#!/bin/bash
+# Convierte imágenes al formato elegido; el resultado queda junto al original.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Conversor de imágenes"
+         T_PICK="Seleccione las imágenes a convertir"
+         T_TEXT="Elija el formato de destino:"
+         T_COL="Formato"
+         T_FILE="Imagen"
+         T_SAME="Estos archivos ya estaban en ese formato:"
+         T_ERR="No se pudieron convertir estos archivos:" ;;
+    gl*) T_TITLE="Conversor de imaxes"
+         T_PICK="Seleccione as imaxes a converter"
+         T_TEXT="Escolla o formato de destino:"
+         T_COL="Formato"
+         T_FILE="Imaxe"
+         T_SAME="Estes ficheiros xa estaban nese formato:"
+         T_ERR="Non se puideron converter estes ficheiros:" ;;
+    *)   T_TITLE="Image converter"
+         T_PICK="Select the images to convert"
+         T_TEXT="Choose the target format:"
+         T_COL="Format"
+         T_FILE="Image"
+         T_SAME="These files were already in that format:"
+         T_ERR="These files could not be converted:" ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t files < <(zenity --file-selection --multiple --separator=$'\n' --title="$T_PICK")
+else
+    files=("$@")
+fi
+[ ${#files[@]} -eq 0 ] && exit 0
+
+formato=$(zenity --list --radiolist --title="$T_TITLE" --text="$T_TEXT" \
+    --column="" --column="$T_COL" \
+    TRUE "PNG" FALSE "JPG" FALSE "WEBP" FALSE "TIFF" FALSE "BMP" FALSE "GIF" FALSE "PDF" \
+    --height=500) || exit 0
+ext=${formato,,}
+
+salida_libre() {
+    local base="${1%.*}" out="${1%.*}.$2" n=1
+    while [ -e "$out" ]; do out="$base-$n.$2"; n=$((n + 1)); done
+    printf '%s' "$out"
+}
+
+errores=$(mktemp) iguales=$(mktemp)
+trap 'rm -f "$errores" "$iguales"' EXIT
+
+total=${#files[@]}
+n=0
+for f in "${files[@]}"; do
+    echo "# $T_FILE: $(basename "$f")"
+    ext_orig="${f##*.}"; ext_orig=${ext_orig,,}
+    # jpg y jpeg son el mismo formato
+    if [ "$ext_orig" = "$ext" ] || { [ "$ext" = "jpg" ] && [ "$ext_orig" = "jpeg" ]; }; then
+        basename "$f" >>"$iguales"
+    else
+        out=$(salida_libre "$f" "$ext")
+        if [ "$ext" = "pdf" ]; then
+            # img2pdf encapsula JPG/PNG en el PDF sin recomprimir; si no puede
+            # (p. ej. PNG con transparencia), magick como respaldo.
+            img2pdf --output "$out" "$f" 2>/dev/null ||
+                magick "$f" "$out" 2>/dev/null ||
+                { rm -f "$out"; basename "$f" >>"$errores"; }
+        else
+            magick "$f" -quality 92 "$out" 2>/dev/null || { rm -f "$out"; basename "$f" >>"$errores"; }
+        fi
+    fi
+    n=$((n + 1))
+    echo $((100 * n / total))
+done | zenity --progress --auto-close --title="$T_TITLE" --width=350
+
+[ -s "$iguales" ] && zenity --info --title="$T_TITLE" --text="$T_SAME\n\n$(cat "$iguales")"
+[ -s "$errores" ] && zenity --warning --title="$T_TITLE" --text="$T_ERR\n\n$(cat "$errores")"
+exit 0

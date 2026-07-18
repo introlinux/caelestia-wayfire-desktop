@@ -1,13 +1,42 @@
 #!/bin/bash
-#Script para girar imágenes a la izquierda
-cierralanzador
+# Gira imágenes 90° en sentido antihorario, sobreescribiendo el archivo original.
+set -u
 
 case $LANG in
-    es*) MSG="Archivo" ;;
-    gl*) MSG="Ficheiro" ;;
-    *) 	MSG="File" ;;
+    es*) T_TITLE="Girando imágenes..."
+         T_PICK="Seleccione las imágenes a girar"
+         T_FILE="Archivo"
+         T_ERR="No se pudieron girar estos archivos:" ;;
+    gl*) T_TITLE="Xirando imaxes..."
+         T_PICK="Seleccione as imaxes a xirar"
+         T_FILE="Ficheiro"
+         T_ERR="Non se puideron xirar estes ficheiros:" ;;
+    *)   T_TITLE="Rotating images..."
+         T_PICK="Select the images to rotate"
+         T_FILE="File"
+         T_ERR="These files could not be rotated:" ;;
 esac
 
+if [ $# -eq 0 ]; then
+    mapfile -t files < <(zenity --file-selection --multiple --separator=$'\n' --title="$T_PICK")
+else
+    files=("$@")
+fi
+[ ${#files[@]} -eq 0 ] && exit 0
 
-(for i in "$@"; do CONTADOR=$[100*++parte/$#]; echo $CONTADOR; echo "#$CONTADOR% $MSG $i ";convert -rotate -90 "$i" "$i"; done)|zenity --progress --auto-close
+errores=$(mktemp)
+trap 'rm -f "$errores"' EXIT
 
+total=${#files[@]}
+n=0
+for f in "${files[@]}"; do
+    echo "# $T_FILE: $(basename "$f")"
+    magick mogrify -rotate -90 "$f" 2>/dev/null || basename "$f" >>"$errores"
+    n=$((n + 1))
+    echo $((100 * n / total))
+done | zenity --progress --auto-close --title="$T_TITLE" --width=350
+
+if [ -s "$errores" ]; then
+    zenity --warning --title="$T_TITLE" --text="$T_ERR\n\n$(cat "$errores")"
+fi
+exit 0

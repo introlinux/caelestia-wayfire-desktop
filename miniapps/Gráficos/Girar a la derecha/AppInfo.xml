@@ -1,31 +1,24 @@
 <?xml version="1.0"?>
 <AppInfo>
   <Summary>
-    Utility to turn right images    
-    90&#186; clockwise.
+    Rotates images 90º clockwise,
+    overwriting the original file.
 
-    You have to drag &#x26; drop file(s)    
-    on this icon to start the process.    
-   </Summary>
+    Drag one or more images onto the
+    icon, or launch it to pick them.
+  </Summary>
   <Summary xml:lang="es">
-    Herramienta para girar 90&#186;    
-    imágenes hacia la derecha.     
+    Gira imágenes 90º hacia la derecha,
+    sobreescribiendo el archivo original.
 
-    Debe arrastrar algún(os) archivo(s)    
-    sobre este icono para proceder.    
+    Arrastre una o varias imágenes sobre
+    el icono, o láncelo para elegirlas.
   </Summary>
   <Summary xml:lang="gl">
-    Ferramenta para xirar 90&#186;    
-    unha imaxe cara á dereita.   
+    Xira imaxes 90º cara á dereita,
+    sobreescribindo o ficheiro orixinal.
 
-    Debe arrastrar algún(s) ficheiro(s)    
-    sobre esta icona para proceder.    
-  </Summary>
-  <Summary xml:lang="ca">
-    Eina per girar imatges
-    90&#186; cap a la dreta.
-
-    Arrossegueu algun arxiu sobre 
-    aquesta icona per a procedir.
+    Arrastre unha ou varias imaxes sobre
+    a icona, ou lánceo para escollelas.
   </Summary>
 </AppInfo>

@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Shrinks images to a chosen resolution
+    (keeping proportions). Copies go into
+    a subfolder named after the size; the
+    originals are untouched.
+
+    Drag one or more images onto the
+    icon, or launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Reduce imágenes a la resolución elegida
+    (manteniendo proporciones). Las copias
+    van a una subcarpeta con el nombre del
+    tamaño; los originales no se tocan.
+
+    Arrastre una o varias imágenes sobre
+    el icono, o láncelo para elegirlas.
+  </Summary>
+  <Summary xml:lang="gl">
+    Reduce imaxes á resolución escollida
+    (mantendo proporcións). As copias van
+    a un subcartafol co nome do tamaño;
+    os orixinais non se tocan.
+
+    Arrastre unha ou varias imaxes sobre
+    a icona, ou lánceo para escollelas.
+  </Summary>
+</AppInfo>

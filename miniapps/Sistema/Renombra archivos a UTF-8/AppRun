@@ -1,0 +1,46 @@
+#!/bin/bash
+# Repara nombres de archivo con codificación antigua (Windows-1252) convirtiéndolos
+# a UTF-8. Muestra una vista previa y pide confirmación antes de renombrar nada.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Renombrar a UTF-8"
+         T_PICK="Seleccione la carpeta a convertir"
+         T_NONE="No se encontró ningún nombre de archivo que convertir."
+         T_PREVIEW="Se renombrarán estos archivos (antiguo → nuevo).\n¿Desea continuar?"
+         T_DOING="Conversión en progreso..." ;;
+    gl*) T_TITLE="Renomear a UTF-8"
+         T_PICK="Seleccione o cartafol a converter"
+         T_NONE="Non se atopou ningún nome de ficheiro que converter."
+         T_PREVIEW="Renomearanse estes ficheiros (antigo → novo).\nDesexa continuar?"
+         T_DOING="Conversión en progreso..." ;;
+    *)   T_TITLE="Rename to UTF-8"
+         T_PICK="Select the folder to convert"
+         T_NONE="No file names in need of conversion were found."
+         T_PREVIEW="These files will be renamed (old → new).\nDo you want to continue?"
+         T_DOING="Conversion in progress..." ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t targets < <(zenity --file-selection --directory --title="$T_PICK")
+else
+    targets=("$@")
+fi
+[ ${#targets[@]} -eq 0 ] && exit 0
+
+# Pasada de prueba: convmv sin --notest solo muestra lo que haría.
+# (-a: los nombres con la codificación rota no son UTF-8 válido y grep
+# trataría la salida como binaria)
+previa=$(convmv -f windows-1252 -t utf-8 -r "${targets[@]}" 2>&1 | grep -a '^mv ')
+
+if [ -z "$previa" ]; then
+    zenity --info --title="$T_TITLE" --text="$T_NONE"
+    exit 0
+fi
+
+echo "$previa" | zenity --text-info --title="$T_TITLE" --width=700 --height=400 \
+    --checkbox="$(echo -e "$T_PREVIEW" | head -n1)" || exit 0
+
+convmv -f windows-1252 -t utf-8 -r --notest "${targets[@]}" 2>&1 |
+    zenity --progress --pulsate --auto-close --title="$T_TITLE" --text="$T_DOING" --width=350
+exit 0

@@ -1,0 +1,112 @@
+#!/bin/bash
+# Busca archivos duplicados con rdfind. Permite verlos, borrarlos o
+# sustituirlos por enlaces duros (con confirmación previa).
+set -u
+
+case $LANG in
+    es*) T_TITLE="Archivos repetidos"
+         T_PICK="Seleccione las carpetas donde buscar"
+         T_TEXT="Elija qué hacer:"
+         T_COL="Acción"
+         A_VER="Solo ver los archivos repetidos"
+         A_DEL="Buscar y borrar los repetidos (se conserva una copia)"
+         A_LNK="Sustituir los repetidos por enlaces duros"
+         T_SCAN="Buscando archivos repetidos..."
+         T_NONE="No se encontraron archivos repetidos."
+         T_FOUND="repetidos encontrados. Espacio recuperable:"
+         T_CONFIRM="He revisado la lista y quiero continuar"
+         T_DELDONE="Duplicados borrados. Espacio recuperado:"
+         T_LNKDONE="Duplicados enlazados. Espacio recuperado:" ;;
+    gl*) T_TITLE="Ficheiros repetidos"
+         T_PICK="Seleccione os cartafoles onde buscar"
+         T_TEXT="Escolla que facer:"
+         T_COL="Acción"
+         A_VER="Só ver os ficheiros repetidos"
+         A_DEL="Buscar e borrar os repetidos (consérvase unha copia)"
+         A_LNK="Substituír os repetidos por ligazóns duras"
+         T_SCAN="Buscando ficheiros repetidos..."
+         T_NONE="Non se atoparon ficheiros repetidos."
+         T_FOUND="repetidos atopados. Espazo recuperable:"
+         T_CONFIRM="Revisei a lista e quero continuar"
+         T_DELDONE="Duplicados borrados. Espazo recuperado:"
+         T_LNKDONE="Duplicados ligados. Espazo recuperado:" ;;
+    *)   T_TITLE="Duplicate files"
+         T_PICK="Select the folders to scan"
+         T_TEXT="Choose what to do:"
+         T_COL="Action"
+         A_VER="Just show the duplicate files"
+         A_DEL="Find and delete duplicates (one copy is kept)"
+         A_LNK="Replace duplicates with hard links"
+         T_SCAN="Looking for duplicate files..."
+         T_NONE="No duplicate files were found."
+         T_FOUND="duplicates found. Recoverable space:"
+         T_CONFIRM="I reviewed the list and want to continue"
+         T_DELDONE="Duplicates deleted. Space recovered:"
+         T_LNKDONE="Duplicates linked. Space recovered:" ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t dirs < <(zenity --file-selection --directory --multiple --separator=$'\n' --title="$T_PICK")
+else
+    dirs=("$@")
+fi
+[ ${#dirs[@]} -eq 0 ] && exit 0
+
+modo=$(zenity --list --radiolist --title="$T_TITLE" --text="$T_TEXT" \
+    --column="" --column="$T_COL" \
+    TRUE "$A_VER" FALSE "$A_DEL" FALSE "$A_LNK" \
+    --width=520 --height=380) || exit 0
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+# Primera pasada: solo escanear (nunca borra).
+(rdfind -outputname "$tmp/resultados.txt" "${dirs[@]}" >"$tmp/salida.txt" 2>&1; echo 100) |
+    zenity --progress --pulsate --auto-close --title="$T_TITLE" --text="$T_SCAN" --width=350
+
+# Lista legible: tamaño + ruta de cada duplicado (el original no se lista).
+awk -v total="$tmp/total.txt" '
+function human(x,  u, i) {
+    split("B KiB MiB GiB TiB", u, " ")
+    i = 1
+    while (x >= 1024 && i < 5) { x /= 1024; i++ }
+    return sprintf(i == 1 ? "%d %s" : "%.1f %s", x, u[i])
+}
+$1 ~ /^DUPTYPE/ && $1 != "DUPTYPE_FIRST_OCCURRENCE" {
+    suma += $4
+    nombre = $0
+    for (i = 1; i <= 7; i++) sub(/^[^ ]+ /, "", nombre)
+    printf "%10s  %s\n", human($4), nombre
+}
+END { printf "%d\n", suma > total }' "$tmp/resultados.txt" >"$tmp/lista.txt"
+
+ndups=$(wc -l <"$tmp/lista.txt")
+if [ "$ndups" -eq 0 ]; then
+    zenity --info --title="$T_TITLE" --text="$T_NONE"
+    exit 0
+fi
+# Espacio recuperable: suma exacta de los tamaños de los duplicados (la cifra
+# de "Totally ... can be reduced" de rdfind viene ya redondeada en KiB/MiB/GiB).
+bytes=$(cat "$tmp/total.txt")
+espacio=$(numfmt --to=iec-i --suffix=B "$bytes" 2>/dev/null || echo "${bytes} B")
+
+cabecera="$ndups $T_FOUND $espacio"
+
+if [ "$modo" = "$A_VER" ]; then
+    { echo "$cabecera"; echo; cat "$tmp/lista.txt"; } |
+        zenity --text-info --title="$T_TITLE" --width=750 --height=500
+    exit 0
+fi
+
+# Borrar o enlazar: enseñar la lista y pedir confirmación explícita.
+{ echo "$cabecera"; echo; cat "$tmp/lista.txt"; } |
+    zenity --text-info --title="$T_TITLE" --width=750 --height=500 \
+        --checkbox="$T_CONFIRM" || exit 0
+
+if [ "$modo" = "$A_DEL" ]; then accion=-deleteduplicates; fin="$T_DELDONE"; else accion=-makehardlinks; fin="$T_LNKDONE"; fi
+
+(rdfind -outputname "$tmp/resultados2.txt" "$accion" true "${dirs[@]}" >/dev/null 2>&1; echo 100) |
+    zenity --progress --pulsate --auto-close --title="$T_TITLE" --text="$T_SCAN" --width=350
+
+zenity --info --title="$T_TITLE" --text="$fin $espacio"
+exit 0

@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Finds duplicate files in folders and
+    shows them, deletes them (keeping one
+    copy) or replaces them with hard
+    links. Always shows the list and asks
+    before touching anything.
+
+    Drag folders onto the icon, or
+    launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Busca archivos duplicados en carpetas
+    y los muestra, los borra (conservando
+    una copia) o los sustituye por enlaces
+    duros. Siempre enseña la lista y pide
+    confirmación antes de tocar nada.
+
+    Arrastre carpetas sobre el icono,
+    o láncelo para elegirlas.
+  </Summary>
+  <Summary xml:lang="gl">
+    Busca ficheiros duplicados en cartafoles
+    e móstraos, bórraos (conservando unha
+    copia) ou substitúeos por ligazóns
+    duras. Sempre ensina a lista e pide
+    confirmación antes de tocar nada.
+
+    Arrastre cartafoles sobre a icona,
+    ou lánceo para escollelas.
+  </Summary>
+</AppInfo>

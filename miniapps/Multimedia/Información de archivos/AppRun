@@ -1,0 +1,22 @@
+#!/bin/bash
+# Muestra la información técnica (códecs, duración, resolución...) de archivos multimedia.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Información de archivos"
+         T_PICK="Seleccione archivos multimedia" ;;
+    gl*) T_TITLE="Información de ficheiros"
+         T_PICK="Seleccione ficheiros multimedia" ;;
+    *)   T_TITLE="File information"
+         T_PICK="Select media files" ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t files < <(zenity --file-selection --multiple --separator=$'\n' --title="$T_PICK")
+else
+    files=("$@")
+fi
+[ ${#files[@]} -eq 0 ] && exit 0
+
+mediainfo "${files[@]}" | zenity --text-info --title="$T_TITLE" --width=700 --height=550
+exit 0

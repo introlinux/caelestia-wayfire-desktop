@@ -1,0 +1,76 @@
+#!/bin/bash
+# Recorta un fragmento de un archivo de audio sin recodificar.
+# El fragmento se guarda junto al original.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Cortador de audio"
+         T_PICK="Seleccione el archivo de audio a cortar"
+         T_TEXT="Duración total"
+         T_FROM="Inicio (mm:ss)"
+         T_TO="Fin (mm:ss)"
+         T_ERR="No se pudo cortar el archivo. Revise los tiempos."
+         T_NOAUDIO="El archivo no parece ser de audio:" ;;
+    gl*) T_TITLE="Cortador de son"
+         T_PICK="Seleccione o ficheiro de son a cortar"
+         T_TEXT="Duración total"
+         T_FROM="Inicio (mm:ss)"
+         T_TO="Fin (mm:ss)"
+         T_ERR="Non se puido cortar o ficheiro. Revise os tempos."
+         T_NOAUDIO="O ficheiro non semella ser de son:" ;;
+    *)   T_TITLE="Audio cutter"
+         T_PICK="Select the audio file to cut"
+         T_TEXT="Total duration"
+         T_FROM="Start (mm:ss)"
+         T_TO="End (mm:ss)"
+         T_ERR="The file could not be cut. Check the times."
+         T_NOAUDIO="The file does not look like audio:" ;;
+esac
+
+if [ $# -eq 0 ]; then
+    f=$(zenity --file-selection --title="$T_PICK") || exit 0
+    set -- "$f"
+fi
+
+salida_libre() {
+    local base="${1%.*}" ext="${1##*.}" out n=1
+    out="$base-1.$ext"
+    while [ -e "$out" ]; do n=$((n + 1)); out="$base-$n.$ext"; done
+    printf '%s' "$out"
+}
+
+# segundos (entero) → mm:ss o h:mm:ss
+formatea() {
+    local s=$1
+    if [ "$s" -ge 3600 ]; then printf '%d:%02d:%02d' $((s / 3600)) $((s % 3600 / 60)) $((s % 60))
+    else printf '%d:%02d' $((s / 60)) $((s % 60)); fi
+}
+
+for f in "$@"; do
+    dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$f" 2>/dev/null)
+    dur=${dur%.*}
+    if [ -z "$dur" ]; then
+        zenity --warning --title="$T_TITLE" --text="$T_NOAUDIO\n$(basename "$f")"
+        continue
+    fi
+    total=$(formatea "$dur")
+
+    tiempos=$(yad --form --title="$T_TITLE" \
+        --text="<b>$(basename "$f")</b>\n$T_TEXT: $total" \
+        --field="$T_FROM" "0:00" \
+        --field="$T_TO" "$total" \
+        --width=350) || continue
+
+    ini=$(echo "$tiempos" | cut -d'|' -f1)
+    fin=$(echo "$tiempos" | cut -d'|' -f2)
+    [ -z "$ini" ] && ini="0:00"
+    [ -z "$fin" ] && fin="$total"
+
+    out=$(salida_libre "$f")
+    if ! ffmpeg -nostdin -hide_banner -loglevel error -i "$f" \
+        -ss "$ini" -to "$fin" -c copy "$out" 2>/dev/null || [ ! -s "$out" ]; then
+        rm -f "$out"
+        zenity --error --title="$T_TITLE" --text="$T_ERR"
+    fi
+done
+exit 0

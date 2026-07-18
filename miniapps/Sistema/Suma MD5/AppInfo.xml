@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Computes MD5 or SHA-256 checksums
+    of files and folders (recursively),
+    showing them on screen or saving
+    them to a file.
+
+    Drag files or folders onto the
+    icon, or launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Calcula sumas MD5 o SHA-256 de
+    archivos y carpetas (recursivamente),
+    mostrándolas en pantalla o
+    guardándolas en un archivo.
+
+    Arrastre archivos o carpetas sobre
+    el icono, o láncelo para elegirlos.
+  </Summary>
+  <Summary xml:lang="gl">
+    Calcula sumas MD5 ou SHA-256 de
+    ficheiros e cartafoles (recursivamente),
+    mostrándoas na pantalla ou
+    gardándoas nun ficheiro.
+
+    Arrastre ficheiros ou cartafoles sobre
+    a icona, ou lánceo para escollelos.
+  </Summary>
+</AppInfo>

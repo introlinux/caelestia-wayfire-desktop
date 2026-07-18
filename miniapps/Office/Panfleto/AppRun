@@ -1,0 +1,51 @@
+#!/bin/bash
+# Convierte un PDF en un folleto/cuadernillo: páginas reordenadas y montadas
+# de dos en dos, listo para imprimir a doble cara y doblar por la mitad.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Panfleto"
+         T_PICK="Seleccione el PDF a convertir en folleto"
+         T_DOING="Montando el folleto..."
+         T_SAVETIT="¿Dónde guardamos el folleto?"
+         T_DONE="Folleto creado.\n\nImprímalo a <b>doble cara volteando por el borde corto</b> y doble las hojas por la mitad."
+         T_ERR="No se pudo crear el folleto de" ;;
+    gl*) T_TITLE="Panfleto"
+         T_PICK="Seleccione o PDF a converter en folleto"
+         T_DOING="Montando o folleto..."
+         T_SAVETIT="Onde gardamos o folleto?"
+         T_DONE="Folleto creado.\n\nImprímao a <b>dobre cara voltexando polo bordo curto</b> e dobre as follas pola metade."
+         T_ERR="Non se puido crear o folleto de" ;;
+    *)   T_TITLE="Booklet"
+         T_PICK="Select the PDF to turn into a booklet"
+         T_DOING="Building the booklet..."
+         T_SAVETIT="Where do we save the booklet?"
+         T_DONE="Booklet created.\n\nPrint it <b>double-sided, flipping on the short edge</b>, and fold the sheets in half."
+         T_ERR="Could not build a booklet from" ;;
+esac
+
+ruta=$(dirname "$(readlink -f "$0")")
+
+if [ $# -eq 0 ]; then
+    f=$(zenity --file-selection --title="$T_PICK" --file-filter="PDF | *.pdf *.PDF") || exit 0
+    set -- "$f"
+fi
+
+for f in "$@"; do
+    base=$(basename "$f")
+    destino=$(zenity --file-selection --save --filename="${base%.*}_panfleto.pdf" --title="$T_SAVETIT") || continue
+    case $destino in *.pdf | *.PDF) ;; *) destino="$destino.pdf" ;; esac
+
+    err=$(mktemp)
+    (python3 "$ruta/panfleto.py" "$f" "$destino" 2>"$err"; echo 100) |
+        zenity --progress --pulsate --auto-close --title="$T_TITLE" --text="$T_DOING" --width=350
+
+    if [ -s "$destino" ]; then
+        zenity --info --title="$T_TITLE" --text="$T_DONE"
+    else
+        rm -f "$destino"
+        zenity --error --title="$T_TITLE" --text="$T_ERR $base:\n\n$(head -n3 "$err")"
+    fi
+    rm -f "$err"
+done
+exit 0

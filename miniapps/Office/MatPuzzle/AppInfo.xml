@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Creates a printable math-puzzle
+    worksheet from an image: a board with
+    the results and the shuffled pieces,
+    each labelled with an operation. Pupils
+    solve, cut out and paste each piece on
+    its result to rebuild the picture.
+
+    Drag an image onto the icon, or
+    launch it to pick one.
+  </Summary>
+  <Summary xml:lang="es">
+    Crea una ficha imprimible de puzzle
+    matemático a partir de una imagen: un
+    tablero con los resultados y las piezas
+    desordenadas, cada una con su operación.
+    El alumnado resuelve, recorta y pega
+    cada pieza sobre su resultado para
+    recomponer la imagen.
+
+    Arrastre una imagen sobre el icono,
+    o láncelo para elegirla.
+  </Summary>
+  <Summary xml:lang="gl">
+    Crea unha ficha imprimible de puzzle
+    matemático a partir dunha imaxe: un
+    taboleiro cos resultados e as pezas
+    desordenadas, cada unha coa súa
+    operación. O alumnado resolve, recorta
+    e pega cada peza sobre o seu resultado
+    para recompor a imaxe.
+
+    Arrastre unha imaxe sobre a icona,
+    ou lánceo para escollela.
+  </Summary>
+</AppInfo>

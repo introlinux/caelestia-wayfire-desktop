@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Slows down audio files (50-95% of the
+    original speed) without changing the
+    pitch. Handy for studying melodies.
+    The result is saved next to the
+    original.
+
+    Drag audio files onto the icon,
+    or launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Ralentiza archivos de audio (50-95%
+    de la velocidad original) sin cambiar
+    el tono. Útil para estudiar melodías.
+    El resultado se guarda junto al
+    original.
+
+    Arrastre audios sobre el icono,
+    o láncelo para elegirlos.
+  </Summary>
+  <Summary xml:lang="gl">
+    Ralentiza ficheiros de son (50-95%
+    da velocidade orixinal) sen cambiar
+    o ton. Útil para estudar melodías.
+    O resultado gárdase a carón do
+    orixinal.
+
+    Arrastre sons sobre a icona,
+    ou lánceo para escollelos.
+  </Summary>
+</AppInfo>

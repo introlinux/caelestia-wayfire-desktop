@@ -1,0 +1,135 @@
+#!/bin/bash
+# Limpia rastros de datos personales antes de ceder el equipo: cachés,
+# papelera, recientes, historiales, navegadores, logs del sistema y redes
+# Wi-Fi guardadas. Muestra una lista con casillas y pide confirmación.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Limpia"
+         T_TEXT="Marque lo que desea borrar. Esta acción <b>no tiene vuelta atrás</b>."
+         T_COL="Qué se borra"
+         I_CACHE="Cachés y miniaturas (~/.cache)"
+         I_TRASH="Papelera"
+         I_RECENT="Archivos recientes y sesiones de editores"
+         I_HIST="Historial de la terminal"
+         I_BROWSER="Navegadores: perfiles COMPLETOS (marcadores y contraseñas incluidos)"
+         I_SYS="Sistema: logs y caché de paquetes (pide contraseña)"
+         I_WIFI="Redes Wi-Fi guardadas (pide contraseña)"
+         T_CONFIRM="¿Borrar lo marcado? No hay vuelta atrás."
+         T_DOING="Limpiando"
+         T_DONE="Limpieza completada. Espacio liberado:"
+         T_NOTES="Notas:\n• Los terminales abiertos reescriben su historial al cerrarse: cierre la sesión sin abrir más terminales.\n• Revise a mano: claves SSH (~/.ssh), claves GPG (~/.gnupg), cuentas de correo y sus documentos personales."
+         T_ERRSYS="La parte de sistema no se ejecutó (autenticación cancelada o fallida)." ;;
+    gl*) T_TITLE="Limpa"
+         T_TEXT="Marque o que desexa borrar. Esta acción <b>non ten volta atrás</b>."
+         T_COL="Que se borra"
+         I_CACHE="Cachés e miniaturas (~/.cache)"
+         I_TRASH="Papeleira"
+         I_RECENT="Ficheiros recentes e sesións de editores"
+         I_HIST="Historial da terminal"
+         I_BROWSER="Navegadores: perfís COMPLETOS (marcadores e contrasinais incluídos)"
+         I_SYS="Sistema: logs e caché de paquetes (pide contrasinal)"
+         I_WIFI="Redes Wi-Fi gardadas (pide contrasinal)"
+         T_CONFIRM="Borrar o marcado? Non hai volta atrás."
+         T_DOING="Limpando"
+         T_DONE="Limpeza completada. Espazo liberado:"
+         T_NOTES="Notas:\n• Os terminais abertos reescriben o seu historial ao pecharse: peche a sesión sen abrir máis terminais.\n• Revise a man: chaves SSH (~/.ssh), chaves GPG (~/.gnupg), contas de correo e os seus documentos persoais."
+         T_ERRSYS="A parte de sistema non se executou (autenticación cancelada ou fallida)." ;;
+    *)   T_TITLE="Clean up"
+         T_TEXT="Tick what you want to delete. This <b>cannot be undone</b>."
+         T_COL="What gets deleted"
+         I_CACHE="Caches and thumbnails (~/.cache)"
+         I_TRASH="Trash"
+         I_RECENT="Recent files and editor sessions"
+         I_HIST="Shell history"
+         I_BROWSER="Browsers: FULL profiles (including bookmarks and passwords)"
+         I_SYS="System: logs and package cache (asks for password)"
+         I_WIFI="Saved Wi-Fi networks (asks for password)"
+         T_CONFIRM="Delete the selected items? This cannot be undone."
+         T_DOING="Cleaning"
+         T_DONE="Cleaning finished. Space freed:"
+         T_NOTES="Notes:\n• Open terminals rewrite their history on exit: log out without opening more terminals.\n• Check by hand: SSH keys (~/.ssh), GPG keys (~/.gnupg), mail accounts and your personal documents."
+         T_ERRSYS="The system part did not run (authentication cancelled or failed)." ;;
+esac
+
+sel=$(zenity --list --checklist --title="$T_TITLE" --text="$T_TEXT" \
+    --column="" --column="$T_COL" --separator=$'\n' \
+    TRUE  "$I_CACHE" \
+    TRUE  "$I_TRASH" \
+    TRUE  "$I_RECENT" \
+    TRUE  "$I_HIST" \
+    FALSE "$I_BROWSER" \
+    TRUE  "$I_SYS" \
+    TRUE  "$I_WIFI" \
+    --width=560 --height=420) || exit 0
+[ -z "$sel" ] && exit 0
+
+marcado() { grep -qxF "$1" <<<"$sel"; }
+
+zenity --question --title="$T_TITLE" --text="$T_CONFIRM" || exit 0
+
+antes=$(df --output=avail -k "$HOME" | tail -1)
+fallo_sys=$(mktemp)
+trap 'rm -f "$fallo_sys"' EXIT
+
+(
+    if marcado "$I_CACHE"; then
+        echo "# $T_DOING: $I_CACHE"
+        find "$HOME/.cache" -mindepth 1 -delete 2>/dev/null
+    fi
+    if marcado "$I_TRASH"; then
+        echo "# $T_DOING: $I_TRASH"
+        rm -rf "$HOME/.local/share/Trash/files" "$HOME/.local/share/Trash/info" 2>/dev/null
+    fi
+    if marcado "$I_RECENT"; then
+        echo "# $T_DOING: $I_RECENT"
+        rm -f "$HOME/.local/share/recently-used.xbel"*
+        # sesión y borradores de GNOME Text Editor, metadatos de gedit,
+        # metadatos de archivos (gvfs) y registro de actividad (zeitgeist)
+        rm -rf "$HOME/.local/share/gnome-text-editor"
+        rm -rf "$HOME/.local/share/gedit"
+        rm -rf "$HOME/.local/share/gvfs-metadata"
+        rm -rf "$HOME/.local/share/zeitgeist"
+    fi
+    if marcado "$I_HIST"; then
+        echo "# $T_DOING: $I_HIST"
+        rm -f "$HOME/.bash_history" "$HOME/.zsh_history" "$HOME/.histfile" \
+            "$HOME/.python_history" "$HOME/.lesshst" "$HOME/.wget-hsts" \
+            "$HOME/.local/share/nano/search_history" \
+            "$HOME/.local/state/bash/history" 2>/dev/null
+    fi
+    if marcado "$I_BROWSER"; then
+        echo "# $T_DOING: $I_BROWSER"
+        rm -rf "$HOME/.mozilla" "$HOME/.cache/mozilla" \
+            "$HOME/.config/chromium" "$HOME/.cache/chromium" \
+            "$HOME/.config/google-chrome" "$HOME/.cache/google-chrome" \
+            "$HOME/snap/firefox" 2>/dev/null
+    fi
+
+    # Las dos tareas de root van juntas para pedir la contraseña una sola vez.
+    script_root=""
+    if marcado "$I_SYS"; then
+        script_root='journalctl --rotate --quiet; journalctl --vacuum-time=1s --quiet;
+            apt-get clean; find /var/tmp -mindepth 1 -delete 2>/dev/null;'
+    fi
+    if marcado "$I_WIFI"; then
+        script_root="$script_root"'
+            nmcli -t -f UUID,TYPE connection show 2>/dev/null |
+                awk -F: "\$2 ~ /wireless/ {print \$1}" |
+                while read -r u; do nmcli connection delete uuid "$u" >/dev/null; done;'
+    fi
+    if [ -n "$script_root" ]; then
+        echo "# $T_DOING: sistema"
+        pkexec bash -c "$script_root true" || echo 1 >"$fallo_sys"
+    fi
+    echo 100
+) | zenity --progress --pulsate --auto-close --title="$T_TITLE" --width=380
+
+despues=$(df --output=avail -k "$HOME" | tail -1)
+liberado=$(( (despues - antes) / 1024 ))
+[ "$liberado" -lt 0 ] && liberado=0
+
+msg="$T_DONE ${liberado} MB\n\n$T_NOTES"
+[ -s "$fallo_sys" ] && msg="$T_ERRSYS\n\n$msg"
+zenity --info --title="$T_TITLE" --text="$msg" --width=420
+exit 0

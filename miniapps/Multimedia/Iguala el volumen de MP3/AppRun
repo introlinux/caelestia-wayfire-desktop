@@ -1,0 +1,54 @@
+#!/bin/bash
+# Iguala el volumen percibido de archivos de audio escribiendo etiquetas
+# ReplayGain 2.0 (rsgain). No recodifica: la calidad no se toca y es reversible.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Igualar volumen"
+         T_PICK="Seleccione archivos de audio o carpetas"
+         T_DOING="Analizando volumen..."
+         T_DONE="Etiquetas ReplayGain escritas.\n\nLos reproductores compatibles (la mayoría) usarán automáticamente el mismo volumen para todos los archivos."
+         T_ERR="Hubo errores con algunos archivos:" ;;
+    gl*) T_TITLE="Igualar volume"
+         T_PICK="Seleccione ficheiros de son ou cartafoles"
+         T_DOING="Analizando o volume..."
+         T_DONE="Etiquetas ReplayGain escritas.\n\nOs reprodutores compatibles (a maioría) usarán automaticamente o mesmo volume para todos os ficheiros."
+         T_ERR="Houbo erros con algúns ficheiros:" ;;
+    *)   T_TITLE="Level volume"
+         T_PICK="Select audio files or folders"
+         T_DOING="Analysing loudness..."
+         T_DONE="ReplayGain tags written.\n\nCompatible players (most of them) will automatically play every file at the same volume."
+         T_ERR="There were errors with some files:" ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t targets < <(zenity --file-selection --multiple --separator=$'\n' --title="$T_PICK")
+else
+    targets=("$@")
+fi
+[ ${#targets[@]} -eq 0 ] && exit 0
+
+# Lista plana: las carpetas se recorren buscando audio.
+lista=$(mktemp) log=$(mktemp)
+trap 'rm -f "$lista" "$log"' EXIT
+for t in "${targets[@]}"; do
+    if [ -d "$t" ]; then
+        find "$t" -type f \( -iname '*.mp3' -o -iname '*.ogg' -o -iname '*.opus' \
+            -o -iname '*.flac' -o -iname '*.m4a' -o -iname '*.wav' \) -print >>"$lista"
+    else
+        printf '%s\n' "$t" >>"$lista"
+    fi
+done
+[ -s "$lista" ] || exit 0
+
+mapfile -t files <"$lista"
+
+(rsgain custom --tagmode=i --clip-mode=p "${files[@]}" >"$log" 2>&1; echo 100) |
+    zenity --progress --pulsate --auto-close --title="$T_TITLE" --text="$T_DOING" --width=350
+
+if grep -qi "error" "$log"; then
+    zenity --warning --title="$T_TITLE" --text="$T_ERR\n\n$(grep -i error "$log" | head -n8)"
+else
+    zenity --info --title="$T_TITLE" --text="$T_DONE"
+fi
+exit 0

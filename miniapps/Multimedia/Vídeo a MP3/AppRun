@@ -1,0 +1,57 @@
+#!/bin/bash
+# Extrae el audio de archivos de vídeo a MP3, junto al original.
+# Si la pista de audio ya es MP3 se copia sin recodificar.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Extrayendo audio..."
+         T_PICK="Seleccione los archivos de vídeo"
+         T_FILE="Archivo"
+         T_ERR="No se pudo extraer el audio de estos archivos:" ;;
+    gl*) T_TITLE="Extraendo o son..."
+         T_PICK="Seleccione os ficheiros de vídeo"
+         T_FILE="Ficheiro"
+         T_ERR="Non se puido extraer o son destes ficheiros:" ;;
+    *)   T_TITLE="Extracting audio..."
+         T_PICK="Select the video files"
+         T_FILE="File"
+         T_ERR="Audio could not be extracted from these files:" ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t files < <(zenity --file-selection --multiple --separator=$'\n' --title="$T_PICK")
+else
+    files=("$@")
+fi
+[ ${#files[@]} -eq 0 ] && exit 0
+
+salida_libre() {
+    local base="${1%.*}" out="${1%.*}.mp3" n=1
+    while [ -e "$out" ]; do out="$base-$n.mp3"; n=$((n + 1)); done
+    printf '%s' "$out"
+}
+
+errores=$(mktemp)
+trap 'rm -f "$errores"' EXIT
+
+total=${#files[@]}
+n=0
+for f in "${files[@]}"; do
+    echo "# $T_FILE: $(basename "$f")"
+    codec=$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name \
+        -of csv=p=0 "$f" 2>/dev/null)
+    if [ -z "$codec" ]; then
+        basename "$f" >>"$errores"
+    else
+        out=$(salida_libre "$f")
+        # Pista MP3: se copia tal cual; cualquier otra se recodifica.
+        if [ "$codec" = "mp3" ]; then opts=(-codec:a copy); else opts=(-codec:a libmp3lame -q:a 2); fi
+        ffmpeg -nostdin -hide_banner -loglevel error -i "$f" -vn "${opts[@]}" "$out" 2>/dev/null \
+            || { rm -f "$out"; basename "$f" >>"$errores"; }
+    fi
+    n=$((n + 1))
+    echo $((100 * n / total))
+done | zenity --progress --auto-close --title="$T_TITLE" --width=350
+
+[ -s "$errores" ] && zenity --warning --title="$T_TITLE" --text="$T_ERR\n\n$(cat "$errores")"
+exit 0

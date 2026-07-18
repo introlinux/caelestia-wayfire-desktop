@@ -1,0 +1,57 @@
+#!/bin/bash
+# Ralentiza archivos de audio sin cambiar el tono (útil para estudiar melodías).
+# El resultado se guarda junto al original con el porcentaje en el nombre.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Enlentece audio"
+         T_PICK="Seleccione los audios a ralentizar"
+         T_TEXT="Velocidad respecto al original (%):"
+         T_FILE="Archivo"
+         T_ERR="No se pudieron procesar estos archivos:" ;;
+    gl*) T_TITLE="Enlentece o son"
+         T_PICK="Seleccione os sons a ralentizar"
+         T_TEXT="Velocidade respecto ao orixinal (%):"
+         T_FILE="Ficheiro"
+         T_ERR="Non se puideron procesar estes ficheiros:" ;;
+    *)   T_TITLE="Slow down audio"
+         T_PICK="Select the audio files to slow down"
+         T_TEXT="Speed relative to the original (%):"
+         T_FILE="File"
+         T_ERR="These files could not be processed:" ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t files < <(zenity --file-selection --multiple --separator=$'\n' --title="$T_PICK")
+else
+    files=("$@")
+fi
+[ ${#files[@]} -eq 0 ] && exit 0
+
+pct=$(zenity --scale --title="$T_TITLE" --text="$T_TEXT" \
+    --min-value=50 --max-value=95 --value=75 --step=5) || exit 0
+
+salida_libre() {
+    local stem="${1%.*}_$2" ext="${1##*.}"
+    local out="$stem.$ext" n=1
+    while [ -e "$out" ]; do out="$stem-$n.$ext"; n=$((n + 1)); done
+    printf '%s' "$out"
+}
+
+errores=$(mktemp)
+trap 'rm -f "$errores"' EXIT
+
+total=${#files[@]}
+n=0
+for f in "${files[@]}"; do
+    echo "# $T_FILE: $(basename "$f")"
+    out=$(salida_libre "$f" "${pct}pct")
+    ffmpeg -nostdin -hide_banner -loglevel error -i "$f" -vn \
+        -filter:a "atempo=0.$pct" "$out" 2>/dev/null \
+        || { rm -f "$out"; basename "$f" >>"$errores"; }
+    n=$((n + 1))
+    echo $((100 * n / total))
+done | zenity --progress --auto-close --title="$T_TITLE" --width=350
+
+[ -s "$errores" ] && zenity --warning --title="$T_TITLE" --text="$T_ERR\n\n$(cat "$errores")"
+exit 0

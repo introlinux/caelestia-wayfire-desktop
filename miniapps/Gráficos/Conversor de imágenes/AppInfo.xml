@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Converts images to another format
+    (PNG, JPG, WEBP, TIFF, BMP, GIF, PDF).
+    The result is saved next to the
+    original.
+
+    Drag one or more images onto the
+    icon, or launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Convierte imágenes a otro formato
+    (PNG, JPG, WEBP, TIFF, BMP, GIF, PDF).
+    El resultado se guarda junto al
+    original.
+
+    Arrastre una o varias imágenes sobre
+    el icono, o láncelo para elegirlas.
+  </Summary>
+  <Summary xml:lang="gl">
+    Converte imaxes a outro formato
+    (PNG, JPG, WEBP, TIFF, BMP, GIF, PDF).
+    O resultado gárdase a carón do
+    orixinal.
+
+    Arrastre unha ou varias imaxes sobre
+    a icona, ou lánceo para escollelas.
+  </Summary>
+</AppInfo>

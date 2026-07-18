@@ -1,0 +1,87 @@
+#!/bin/bash
+# Une varios archivos de audio en uno solo, en el orden dado. Si todos tienen
+# el mismo códec se pegan sin recodificar; si no, se recodifica a MP3.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Pega archivos de audio"
+         T_PICK="Seleccione los audios a unir (mínimo 2)"
+         T_FEW="Se necesitan al menos dos archivos de audio."
+         T_DOING="Uniendo archivos..."
+         T_SAVETIT="¿Dónde guardamos el resultado?"
+         T_ERR="No se pudo crear el archivo unido." ;;
+    gl*) T_TITLE="Pega ficheiros de son"
+         T_PICK="Seleccione os sons a unir (mínimo 2)"
+         T_FEW="Precísanse polo menos dous ficheiros de son."
+         T_DOING="Unindo ficheiros..."
+         T_SAVETIT="Onde gardamos o resultado?"
+         T_ERR="Non se puido crear o ficheiro unido." ;;
+    *)   T_TITLE="Join audio files"
+         T_PICK="Select the audio files to join (at least 2)"
+         T_FEW="At least two audio files are needed."
+         T_DOING="Joining files..."
+         T_SAVETIT="Where do we save the result?"
+         T_ERR="The joined file could not be created." ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t files < <(zenity --file-selection --multiple --separator=$'\n' --title="$T_PICK")
+else
+    files=("$@")
+fi
+if [ ${#files[@]} -lt 2 ]; then
+    zenity --info --title="$T_TITLE" --text="$T_FEW"
+    exit 0
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+# ¿Comparten códec todos los archivos? Entonces se puede pegar sin recodificar.
+codec_comun=""
+mismo=1
+for f in "${files[@]}"; do
+    c=$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of csv=p=0 "$f" 2>/dev/null)
+    [ -z "$codec_comun" ] && codec_comun="$c"
+    [ "$c" != "$codec_comun" ] || [ -z "$c" ] && mismo=0
+done
+
+if [ $mismo -eq 1 ]; then
+    ext="${files[0]##*.}"
+    nombre_defecto="unido.${ext,,}"
+else
+    nombre_defecto="unido.mp3"
+fi
+
+destino=$(zenity --file-selection --save --filename="$nombre_defecto" --title="$T_SAVETIT") || exit 0
+
+(
+    if [ $mismo -eq 1 ]; then
+        # Lista para el demuxer concat (las comillas simples del nombre se escapan).
+        for f in "${files[@]}"; do
+            printf "file '%s'\n" "${f//\'/\'\\\'\'}" >>"$tmp/lista.txt"
+        done
+        ffmpeg -nostdin -hide_banner -loglevel error -f concat -safe 0 \
+            -i "$tmp/lista.txt" -c copy "$destino" 2>"$tmp/err" && exit 0
+        rm -f "$destino"
+    fi
+    # Códecs distintos (o falló la copia directa): recodificar a MP3.
+    entradas=()
+    filtro=""
+    i=0
+    for f in "${files[@]}"; do
+        entradas+=(-i "$f")
+        filtro="$filtro[$i:a:0]"
+        i=$((i + 1))
+    done
+    ffmpeg -nostdin -hide_banner -loglevel error "${entradas[@]}" \
+        -filter_complex "${filtro}concat=n=$i:v=0:a=1[out]" -map "[out]" \
+        -codec:a libmp3lame -q:a 2 "$destino" 2>>"$tmp/err"
+) | zenity --progress --pulsate --auto-close --title="$T_TITLE" --text="$T_DOING" --width=350
+
+if [ ! -s "$destino" ]; then
+    rm -f "$destino"
+    zenity --error --title="$T_TITLE" --text="$T_ERR\n\n$(head -n5 "$tmp/err" 2>/dev/null)"
+    exit 1
+fi
+exit 0

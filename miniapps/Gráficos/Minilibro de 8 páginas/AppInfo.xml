@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Turns an 8-page document (PDF, ODT,
+    DOCX...) into one A4 sheet laid out
+    so that, after a central cut and some
+    folding, it becomes a tiny book.
+
+    Drag the document onto the icon,
+    or launch it to pick one.
+  </Summary>
+  <Summary xml:lang="es">
+    Convierte un documento de 8 páginas
+    (PDF, ODT, DOCX...) en una hoja A4
+    montada de forma que, con un corte
+    central y unos pliegues, se convierte
+    en un librito.
+
+    Arrastre el documento sobre el icono,
+    o láncelo para elegirlo.
+  </Summary>
+  <Summary xml:lang="gl">
+    Converte un documento de 8 páxinas
+    (PDF, ODT, DOCX...) nunha folla A4
+    montada de xeito que, cun corte
+    central e uns pregues, se converte
+    nun libriño.
+
+    Arrastre o documento sobre a icona,
+    ou lánceo para escollelo.
+  </Summary>
+</AppInfo>
