@@ -83,6 +83,22 @@ class shift_switcher_t : public wf::plugin_interface_t
     std::map<wayfire_toplevel_view, std::unique_ptr<anim_t>> anims;
     shift_wm_t *installed_wm = nullptr;
 
+    /* Click-to-focus reaches focus_raise_view() in the middle of the button
+     * press event. If the view starts moving right away, the surface slides
+     * out from under the implicit pointer grab and the client watches the
+     * pointer leave whatever was pressed (e.g. its close button) before the
+     * release arrives, which cancels the click. So the raise/animation of the
+     * newly focused view is parked in `pending` until every pointer button
+     * and touch point is up, and only then committed. */
+    int pressed_count = 0;
+    wayfire_toplevel_view pending = nullptr;
+    wf::signal::connection_t<wf::view_unmapped_signal> pending_unmap;
+    wf::wl_idle_call idle_commit;
+
+    wf::signal::connection_t<wf::post_input_event_signal<wlr_pointer_button_event>> on_post_button;
+    wf::signal::connection_t<wf::post_input_event_signal<wlr_touch_down_event>> on_post_touch_down;
+    wf::signal::connection_t<wf::post_input_event_signal<wlr_touch_up_event>> on_post_touch_up;
+
   public:
     void init() override
     {
@@ -94,11 +110,39 @@ class shift_switcher_t : public wf::plugin_interface_t
 
         installed_wm = wm.get();
         wf::get_core().default_wm = std::move(wm);
+
+        on_post_button = [this] (wf::post_input_event_signal<wlr_pointer_button_event> *ev)
+        {
+            if (ev->event->state == WL_POINTER_BUTTON_STATE_PRESSED)
+            {
+                pressed_count++;
+            } else
+            {
+                pressed_count = std::max(0, pressed_count - 1);
+                check_commit_pending();
+            }
+        };
+        wf::get_core().connect(&on_post_button);
+
+        on_post_touch_down = [this] (wf::post_input_event_signal<wlr_touch_down_event>*)
+        {
+            pressed_count++;
+        };
+        wf::get_core().connect(&on_post_touch_down);
+
+        on_post_touch_up = [this] (wf::post_input_event_signal<wlr_touch_up_event>*)
+        {
+            pressed_count = std::max(0, pressed_count - 1);
+            check_commit_pending();
+        };
+        wf::get_core().connect(&on_post_touch_up);
+
         LOGI("shift-switcher: installed window manager override");
     }
 
     void fini() override
     {
+        clear_pending();
         while (!anims.empty())
         {
             cancel(anims.begin()->first, true);
@@ -138,9 +182,9 @@ class shift_switcher_t : public wf::plugin_interface_t
             return false;
         }
 
-        if (anims.count(toplevel))
+        if (anims.count(toplevel) || (pending == toplevel))
         {
-            /* Already flying: just make sure it keeps the focus */
+            /* Already flying or queued: just make sure it keeps the focus */
             focus_no_raise(view, allow_switch_ws);
             return true;
         }
@@ -153,11 +197,73 @@ class shift_switcher_t : public wf::plugin_interface_t
             return false;
         }
 
-        LOGD("shift-switcher: animating view ", toplevel->get_id(),
-            " offset ", offset->x, ",", offset->y);
+        LOGD("shift-switcher: queueing raise of view ", toplevel->get_id());
         focus_no_raise(view, allow_switch_ws);
-        start_animation(toplevel, *offset);
+        set_pending(toplevel);
+
+        /* If this was not triggered by a click there is no release to wait
+         * for; the idle runs once the current input event (if any) has been
+         * fully processed and commits immediately when no button is down. */
+        idle_commit.run_once([this] () { check_commit_pending(); });
         return true;
+    }
+
+    void set_pending(wayfire_toplevel_view view)
+    {
+        clear_pending();
+        pending = view;
+        pending_unmap = [this] (wf::view_unmapped_signal*)
+        {
+            clear_pending();
+        };
+        view->connect(&pending_unmap);
+    }
+
+    void clear_pending()
+    {
+        if (pending)
+        {
+            pending_unmap.disconnect();
+            pending = nullptr;
+        }
+    }
+
+    void check_commit_pending()
+    {
+        if (!pending || (pressed_count > 0))
+        {
+            return;
+        }
+
+        auto view = pending;
+        clear_pending();
+
+        if (!view->is_mapped() || view->minimized || !view->get_output() ||
+            !view->get_output()->wset())
+        {
+            return;
+        }
+
+        if (wf::get_core().seat->get_active_view() != view)
+        {
+            /* Lost the focus while waiting for the release; raising it now
+             * would put an unfocused window on top */
+            return;
+        }
+
+        /* The stacking may have changed while the button was held (e.g. the
+         * window was moved), so recompute the escape direction now */
+        auto offset = compute_pull_offset(view);
+        if (!offset ||
+            !view->get_output()->can_activate_plugin(wf::CAPABILITY_GRAB_INPUT))
+        {
+            wf::view_bring_to_front(view);
+            return;
+        }
+
+        LOGD("shift-switcher: animating view ", view->get_id(),
+            " offset ", offset->x, ",", offset->y);
+        start_animation(view, *offset);
     }
 
     /* Same as the default focus_raise_view, minus the bring-to-front */
