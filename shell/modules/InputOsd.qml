@@ -147,7 +147,7 @@ Scope {
     Timer {
         id: gestureHide
 
-        interval: 900
+        interval: 1800
         onTriggered: {
             root.gIcon = "";
             root.gText = "";
@@ -200,7 +200,7 @@ Scope {
                 anchors.bottom: true
                 anchors.left: true
                 anchors.right: true
-                implicitHeight: 96
+                implicitHeight: 110
 
                 RowLayout {
                     anchors.horizontalCenter: parent.horizontalCenter
@@ -214,7 +214,7 @@ Scope {
                         radius: Tokens.rounding.full
                         color: Qt.alpha(Colours.palette.m3surfaceContainer, 0.92)
                         implicitWidth: gestureRow.implicitWidth + Tokens.padding.large * 2
-                        implicitHeight: 44
+                        implicitHeight: 52
 
                         opacity: root.gActive ? 1 : 0.85
 
@@ -228,13 +228,13 @@ Scope {
                                 visible: root.gIcon !== ""
                                 text: root.gIcon
                                 color: Colours.palette.m3primary
-                                font.pointSize: Tokens.font.size.large
+                                font.pointSize: Tokens.font.size.extraLarge
                             }
 
                             StyledText {
                                 text: root.gText
                                 color: Colours.palette.m3onSurface
-                                font.pointSize: Tokens.font.size.normal
+                                font.pointSize: Tokens.font.size.large
                             }
                         }
                     }
@@ -252,7 +252,7 @@ Scope {
                             radius: Tokens.rounding.normal
                             color: Qt.alpha(Colours.palette.m3inverseSurface, 0.92)
                             implicitWidth: chipText.implicitWidth + Tokens.padding.large * 2
-                            implicitHeight: 44
+                            implicitHeight: 52
 
                             scale: 0
                             Component.onCompleted: scale = 1
@@ -267,7 +267,7 @@ Scope {
                                 anchors.centerIn: parent
                                 text: chip.count > 1 ? `${chip.label} ×${chip.count}` : chip.label
                                 color: Colours.palette.m3inverseOnSurface
-                                font.pointSize: Tokens.font.size.normal
+                                font.pointSize: Tokens.font.size.large
                                 font.weight: 500
                             }
                         }
