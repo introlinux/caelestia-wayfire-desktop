@@ -83,16 +83,25 @@ def main():
         notify(f'No se encuentra la cámara ({DEVICE})')
         sys.exit(1)
 
-    # -x/-y fijan el tamano de la ventana desde el principio: ffplay ignora
-    # los resize posteriores del compositor (configure-view solo pudo mover).
+    # Se prefiere mpv: es redimensionable en vivo (Alt+arrastre derecho, o
+    # configure-view). ffplay queda de respaldo, pero su ventana SDL sin
+    # borde es de tamano fijo (y con borde ni llega a mapear en Wayfire),
+    # asi que con ffplay solo se puede mover, no redimensionar.
+    import shutil
     env = dict(os.environ, SDL_VIDEODRIVER='wayland', SDL_APP_ID=APP_ID)
+    if shutil.which('mpv'):
+        cmd = ['mpv', '--really-quiet', '--profile=low-latency', '--untimed',
+               '--no-border', '--no-osc', '--title=Webcam',
+               f'--wayland-app-id={APP_ID}', f'--geometry={WIDTH}x{HEIGHT}',
+               f'av://v4l2:{DEVICE}']
+    else:
+        cmd = ['ffplay', '-hide_banner', '-loglevel', 'error', '-noborder',
+               '-x', str(WIDTH), '-y', str(HEIGHT),
+               '-window_title', 'Webcam', '-fflags', 'nobuffer', '-flags',
+               'low_delay', '-f', 'v4l2', '-framerate', '30', '-video_size',
+               '640x480', '-i', DEVICE]
     proc = subprocess.Popen(
-        ['ffplay', '-hide_banner', '-loglevel', 'error', '-noborder',
-         '-x', str(WIDTH), '-y', str(HEIGHT),
-         '-window_title', 'Webcam', '-fflags', 'nobuffer', '-flags',
-         'low_delay', '-f', 'v4l2', '-framerate', '30', '-video_size',
-         '640x480', '-i', DEVICE],
-        env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        cmd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL, start_new_session=True)
     with open(PIDFILE, 'w') as f:
         f.write(str(proc.pid))
@@ -106,8 +115,8 @@ def main():
             os.unlink(PIDFILE)
             notify('ffplay no pudo abrir la cámara (¿en uso?)')
             sys.exit(1)
-        # El SDL de Ubuntu ignora SDL_APP_ID y deja app-id "ffplay", asi que
-        # se acepta tambien esa combinacion con el titulo que si controlamos.
+        # mpv respeta --wayland-app-id; el SDL de Ubuntu ignora SDL_APP_ID y
+        # deja app-id "ffplay", de ahi el segundo criterio con el titulo.
         for v in ipc.call('window-rules/list-views'):
             if (v.get('mapped') and (v.get('app-id') == APP_ID
                     or (v.get('app-id') == 'ffplay' and v.get('title') == 'Webcam'))):

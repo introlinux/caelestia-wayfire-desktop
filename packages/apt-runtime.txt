@@ -102,3 +102,4 @@ foremost
 fio
 convmv
 libinput-tools
+mpv
