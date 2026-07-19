@@ -9,6 +9,12 @@ Wayfire (ipc-rules + wm-actions). Segunda invocación: lo cierra.
 
 El dispositivo se puede cambiar con CAELESTIA_WEBCAM_DEV (por defecto
 /dev/video0, la Logitech C270). Tamaño y margen en las constantes.
+
+Subcomandos (solo con mpv, en vivo vía su IPC):
+  caelestia-webcam-toggle mirror   cicla los 4 volteos sin reiniciar la
+                                   cámara: normal -> espejo horizontal
+                                   (enseñar libros/texto a cámara) ->
+                                   volteo vertical -> ambos (180) -> normal
 """
 
 import glob
@@ -28,6 +34,12 @@ APP_ID = 'caelestia-webcam'
 DEVICE = os.environ.get('CAELESTIA_WEBCAM_DEV', '/dev/video0')
 PIDFILE = os.path.join(os.environ.get('XDG_RUNTIME_DIR', '/tmp'),
                        'caelestia-webcam.pid')
+MPVSOCK = os.path.join(os.environ.get('XDG_RUNTIME_DIR', '/tmp'),
+                       'caelestia-webcam-mpv.sock')
+FLIPFILE = os.path.join(os.environ.get('XDG_RUNTIME_DIR', '/tmp'),
+                        'caelestia-webcam.flip')
+# Ciclo de `mirror`: filtros de video de cada posicion, en orden
+FLIP_STATES = ['', 'hflip', 'vflip', 'hflip,vflip']
 
 
 class Ipc:
@@ -72,11 +84,45 @@ def running_pid():
         return None
 
 
+def mpv_command(*args):
+    """Manda un comando al mpv en marcha por su socket IPC."""
+    if not running_pid() or not os.path.exists(MPVSOCK):
+        notify('La webcam no está encendida (o corre con ffplay, sin IPC)')
+        sys.exit(1)
+    c = socket.socket(socket.AF_UNIX)
+    c.connect(MPVSOCK)
+    c.send((json.dumps({'command': list(args)}) + '\n').encode())
+    c.close()
+
+
+def cycle_mirror():
+    try:
+        state = (int(open(FLIPFILE).read()) + 1) % len(FLIP_STATES)
+    except (OSError, ValueError):
+        state = 1
+    vf = FLIP_STATES[state]
+    mpv_command('vf', 'set', vf) if vf else mpv_command('vf', 'clr', '')
+    with open(FLIPFILE, 'w') as f:
+        f.write(str(state))
+
+
 def main():
+    if len(sys.argv) > 1:
+        sub = sys.argv[1]
+        if sub == 'mirror':
+            return cycle_mirror()
+        sys.exit(f'caelestia-webcam-toggle: subcomando desconocido {sub!r} '
+                 '(disponibles: mirror)')
+
     pid = running_pid()
     if pid:
         os.kill(pid, signal.SIGTERM)
         os.unlink(PIDFILE)
+        # el ciclo de mirror muere con el proceso: proxima sesion, normal
+        try:
+            os.unlink(FLIPFILE)
+        except OSError:
+            pass
         return
 
     if not os.path.exists(DEVICE):
@@ -93,6 +139,13 @@ def main():
         cmd = ['mpv', '--really-quiet', '--profile=low-latency', '--untimed',
                '--no-border', '--no-osc', '--title=Webcam',
                f'--wayland-app-id={APP_ID}', f'--geometry={WIDTH}x{HEIGHT}',
+               f'--input-ipc-server={MPVSOCK}',
+               # Volteos permanentes (los subcomandos mirror/flipv los
+               # conmutan en vivo, pero si quieres arrancar siempre asi,
+               # descomenta el que toque):
+               # '--vf=hflip',        # espejo horizontal
+               # '--vf=vflip',        # volteo vertical
+               # '--vf=hflip,vflip',  # ambos (equivale a girar 180 grados)
                f'av://v4l2:{DEVICE}']
     else:
         cmd = ['ffplay', '-hide_banner', '-loglevel', 'error', '-noborder',
