@@ -101,3 +101,4 @@ rdfind
 foremost
 fio
 convmv
+libinput-tools

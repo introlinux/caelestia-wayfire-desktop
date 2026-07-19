@@ -22,7 +22,7 @@
         <translation>Escritorio</translation>
     </message>
     <message>
-        <location filename="../modules/bar/popouts/ActiveWindow.qml" line="238"/>
+        <location filename="../modules/bar/popouts/ActiveWindow.qml" line="252"/>
         <source>Force quit</source>
         <translation>Forzar cierre</translation>
     </message>
@@ -1243,7 +1243,7 @@ Distribución de teclado: %1</translation>
     <message>
         <location filename="../modules/controlcenter/dashboard/GeneralSection.qml" line="101"/>
         <source>City name or &quot;lat,lon&quot; — leave empty to detect automatically</source>
-        <translation>Nombre de ciudad o "lat,lon" — déjalo vacío para detectarlo automáticamente</translation>
+        <translation>Nombre de ciudad o &quot;lat,lon&quot; — déjalo vacío para detectarlo automáticamente</translation>
     </message>
     <message>
         <location filename="../modules/controlcenter/dashboard/GeneralSection.qml" line="109"/>
@@ -1490,9 +1490,9 @@ Distribución de teclado: %1</translation>
     <name>Media</name>
     <message>
         <location filename="../modules/dashboard/Media.qml" line="216"/>
-        <location filename="../modules/dashboard/dash/Media.qml" line="126"/>
-        <location filename="../modules/dashboard/dash/Media.qml" line="143"/>
-        <location filename="../modules/dashboard/dash/Media.qml" line="160"/>
+        <location filename="../modules/dashboard/dash/Media.qml" line="127"/>
+        <location filename="../modules/dashboard/dash/Media.qml" line="144"/>
+        <location filename="../modules/dashboard/dash/Media.qml" line="161"/>
         <location filename="../modules/lock/Media.qml" line="86"/>
         <location filename="../modules/lock/Media.qml" line="98"/>
         <source>No media</source>
@@ -1500,13 +1500,13 @@ Distribución de teclado: %1</translation>
     </message>
     <message>
         <location filename="../modules/dashboard/Media.qml" line="216"/>
-        <location filename="../modules/dashboard/dash/Media.qml" line="126"/>
+        <location filename="../modules/dashboard/dash/Media.qml" line="127"/>
         <source>Unknown title</source>
         <translation>Título desconocido</translation>
     </message>
     <message>
         <location filename="../modules/dashboard/Media.qml" line="231"/>
-        <location filename="../modules/dashboard/dash/Media.qml" line="143"/>
+        <location filename="../modules/dashboard/dash/Media.qml" line="144"/>
         <source>Unknown album</source>
         <translation>Álbum desconocido</translation>
     </message>
@@ -1517,12 +1517,12 @@ Distribución de teclado: %1</translation>
     </message>
     <message>
         <location filename="../modules/dashboard/Media.qml" line="245"/>
-        <location filename="../modules/dashboard/dash/Media.qml" line="160"/>
+        <location filename="../modules/dashboard/dash/Media.qml" line="161"/>
         <source>Unknown artist</source>
         <translation>Artista desconocido</translation>
     </message>
     <message>
-        <location filename="../modules/dashboard/Media.qml" line="464"/>
+        <location filename="../modules/dashboard/Media.qml" line="471"/>
         <source>No players</source>
         <translation>Sin reproductores</translation>
     </message>
@@ -2567,191 +2567,196 @@ Distribución de teclado: %1</translation>
 <context>
     <name>TaskbarPane</name>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="181"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="183"/>
         <source>Taskbar</source>
         <translation>Barra de tareas</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="192"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="194"/>
         <source>Status Icons</source>
         <translation>Iconos de estado</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="201"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="203"/>
         <source>Speakers</source>
         <translation>Altavoces</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="209"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="211"/>
         <source>Microphone</source>
         <translation>Micrófono</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="217"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="219"/>
         <source>Keyboard</source>
         <translation>Teclado</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="225"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="227"/>
         <source>Network</source>
         <translation>Red</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="233"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="235"/>
         <source>Wifi</source>
         <translation>Wi-Fi</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="241"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="243"/>
         <source>Bluetooth</source>
         <translation>Bluetooth</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="249"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="251"/>
         <source>Battery</source>
         <translation>Batería</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="257"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="259"/>
+        <source>CPU frequency</source>
+        <translation>Frecuencia CPU</translation>
+    </message>
+    <message>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="267"/>
         <source>Capslock</source>
         <translation>Bloqueo de mayúsculas</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="286"/>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="513"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="296"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="523"/>
         <source>Workspaces</source>
         <translation>Áreas de trabajo</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="311"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="321"/>
         <source>Shown</source>
         <translation>Mostrado</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="347"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="357"/>
         <source>Active indicator</source>
         <translation>Indicador activo</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="381"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="391"/>
         <source>Occupied background</source>
         <translation>Fondo ocupado</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="415"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="425"/>
         <source>Show windows</source>
         <translation>Mostrar ventanas</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="449"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="459"/>
         <source>Max window icons</source>
         <translation>Máximo de iconos de ventana</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="485"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="495"/>
         <source>Per monitor workspaces</source>
         <translation>Áreas de trabajo por monitor</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="504"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="514"/>
         <source>Scroll Actions</source>
         <translation>Acciones de desplazamiento</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="521"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="531"/>
         <source>Volume</source>
         <translation>Volumen</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="529"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="539"/>
         <source>Brightness</source>
         <translation>Brillo</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="553"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="563"/>
         <source>Clock</source>
         <translation>Reloj</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="558"/>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="725"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="568"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="735"/>
         <source>Background</source>
         <translation>Fondo</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="567"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="577"/>
         <source>Show date</source>
         <translation>Mostrar fecha</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="576"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="586"/>
         <source>Show clock icon</source>
         <translation>Mostrar icono del reloj</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="590"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="600"/>
         <source>Bar Behavior</source>
         <translation>Comportamiento de la barra</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="595"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="605"/>
         <source>Persistent</source>
         <translation>Persistente</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="604"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="614"/>
         <source>Show on hover</source>
         <translation>Mostrar al pasar el ratón</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="618"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="628"/>
         <source>Drag threshold</source>
         <translation>Umbral de arrastre</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="643"/>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="684"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="653"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="694"/>
         <source>Active window</source>
         <translation>Ventana activa</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="648"/>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="733"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="658"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="743"/>
         <source>Compact</source>
         <translation>Compacto</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="657"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="667"/>
         <source>Inverted</source>
         <translation>Invertido</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="679"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="689"/>
         <source>Popouts</source>
         <translation>Ventanas emergentes</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="693"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="703"/>
         <source>Tray</source>
         <translation>Bandeja del sistema</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="702"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="712"/>
         <source>Status icons</source>
         <translation>Iconos de estado</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="716"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="726"/>
         <source>Tray Settings</source>
         <translation>Ajustes de la bandeja</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="741"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="751"/>
         <source>Recolour</source>
         <translation>Recolorear</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="757"/>
+        <location filename="../modules/controlcenter/taskbar/TaskbarPane.qml" line="767"/>
         <source>Monitors</source>
         <translation>Monitores</translation>
     </message>

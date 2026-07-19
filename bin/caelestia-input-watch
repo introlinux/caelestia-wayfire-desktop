@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""caelestia-input-watch: puente libinput -> OSD de entrada del shell.
+
+Ejecuta `libinput debug-events --show-keycodes` (necesita root: la copia de
+/usr/local/bin se invoca con `sudo -n`; regla NOPASSWD en
+/etc/sudoers.d/caelestia-inputosd) y emite por stdout un evento JSON por
+linea, que consume shell/modules/InputOsd.qml:
+
+  {"t":"key","mods":["Ctrl"],"key":"C","mod":false}     pulsacion de tecla
+  {"t":"button","btn":"left|right|middle"}              boton de raton
+  {"t":"gesture","kind":"swipe","state":"update","fingers":3,"dx":..,"dy":..}
+  {"t":"gesture","kind":"swipe","state":"end","fingers":3,"dir":"right"}
+  {"t":"gesture","kind":"pinch","state":"end","fingers":2,"dir":"in|out"}
+  {"t":"gesture","kind":"hold","state":"end","fingers":3,"dir":""}
+  {"t":"scroll","state":"update","dx":..,"dy":..}       scroll 2 dedos
+  {"t":"scroll","state":"end","dir":"down"}
+
+El scroll de touchpad llega como eventos POINTER_SCROLL_FINGER sueltos, sin
+begin/end: aqui se agregan y se sintetiza el "end" tras 350 ms de silencio.
+Las etiquetas de tecla estan ajustadas a la disposicion es_ES (los nombres
+KEY_* de evdev son posiciones fisicas US: KEY_SEMICOLON es la tecla Ñ).
+
+Prueba sin permisos: CAELESTIA_INPUT_WATCH_CMD="cat muestra.txt" caelestia-input-watch
+"""
+
+import json
+import os
+import queue
+import re
+import shlex
+import signal
+import subprocess
+import sys
+import threading
+
+SCROLL_IDLE_END = 0.35   # s sin eventos de scroll para sintetizar el "end"
+UPDATE_THROTTLE = 0.08   # s minimo entre "update" reenviados por tipo
+
+MODS = {
+    "KEY_LEFTCTRL": "Ctrl", "KEY_RIGHTCTRL": "Ctrl",
+    "KEY_LEFTSHIFT": "Shift", "KEY_RIGHTSHIFT": "Shift",
+    "KEY_LEFTALT": "Alt", "KEY_RIGHTALT": "AltGr",
+    "KEY_LEFTMETA": "Super", "KEY_RIGHTMETA": "Super",
+}
+
+# Etiquetas para disposicion es_ES; lo que no este aqui cae al nombre crudo.
+LABELS = {
+    "KEY_ENTER": "Intro", "KEY_SPACE": "Espacio", "KEY_BACKSPACE": "Retroceso",
+    "KEY_TAB": "Tab", "KEY_ESC": "Esc", "KEY_CAPSLOCK": "Bloq Mayús",
+    "KEY_UP": "↑", "KEY_DOWN": "↓", "KEY_LEFT": "←", "KEY_RIGHT": "→",
+    "KEY_HOME": "Inicio", "KEY_END": "Fin", "KEY_PAGEUP": "RePág",
+    "KEY_PAGEDOWN": "AvPág", "KEY_DELETE": "Supr", "KEY_INSERT": "Ins",
+    "KEY_PRINT": "Impr Pant", "KEY_SYSRQ": "Impr Pant", "KEY_MENU": "Menú",
+    "KEY_SEMICOLON": "Ñ", "KEY_APOSTROPHE": "´", "KEY_GRAVE": "º",
+    "KEY_MINUS": "'", "KEY_EQUAL": "¡", "KEY_LEFTBRACE": "`",
+    "KEY_RIGHTBRACE": "+", "KEY_BACKSLASH": "Ç", "KEY_COMMA": ",",
+    "KEY_DOT": ".", "KEY_SLASH": "-", "KEY_102ND": "<",
+    "KEY_VOLUMEUP": "Vol+", "KEY_VOLUMEDOWN": "Vol-", "KEY_MUTE": "Mute",
+    "KEY_BRIGHTNESSUP": "Brillo+", "KEY_BRIGHTNESSDOWN": "Brillo-",
+    "KEY_KPENTER": "Intro", "KEY_KPPLUS": "+", "KEY_KPMINUS": "-",
+    "KEY_KPASTERISK": "*", "KEY_KPSLASH": "/", "KEY_KPDOT": ".",
+}
+
+BTNS = {"BTN_LEFT": "left", "BTN_RIGHT": "right", "BTN_MIDDLE": "middle"}
+
+RE_KEY = re.compile(r"(KEYBOARD_KEY|POINTER_BUTTON)\s+\S+\s+(\w+)\s+\(-?\d+\)\s+(pressed|released)")
+RE_GESTURE = re.compile(r"GESTURE_(SWIPE|PINCH|HOLD)_(BEGIN|UPDATE|END)\s+\S+\s+(\d+)")
+RE_FLOATPAIR = re.compile(r"(-?\d+\.\d+)\s*/\s*(-?\d+\.\d+)")
+RE_PINCH_SCALE = re.compile(r"\)\s+(-?\d+\.\d+)\s+@")
+RE_SCROLL = re.compile(r"POINTER_SCROLL_FINGER.*vert\s+(-?\d+\.?\d*).*horiz\s+(-?\d+\.?\d*)")
+
+
+def label_for(name):
+    if name in LABELS:
+        return LABELS[name]
+    if re.fullmatch(r"KEY_[A-Z0-9]", name) or re.fullmatch(r"KEY_F\d{1,2}", name):
+        return name[4:]
+    if re.fullmatch(r"KEY_KP\d", name):
+        return name[6:]
+    return name[4:].replace("_", " ").title() if name.startswith("KEY_") else name
+
+
+def dominant_dir(dx, dy):
+    if abs(dx) >= abs(dy):
+        return "right" if dx > 0 else "left"
+    return "down" if dy > 0 else "up"
+
+
+def emit(obj):
+    sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+
+
+def reader(proc, q):
+    for line in proc.stdout:
+        q.put(line)
+    q.put(None)
+
+
+def main():
+    cmd = os.environ.get("CAELESTIA_INPUT_WATCH_CMD")
+    argv = shlex.split(cmd) if cmd else ["libinput", "debug-events", "--show-keycodes"]
+    try:
+        proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                stdin=subprocess.DEVNULL, text=True)
+    except FileNotFoundError:
+        print(f"caelestia-input-watch: no se encuentra {argv[0]} "
+              "(instala libinput-tools)", file=sys.stderr)
+        return 1
+
+    signal.signal(signal.SIGTERM, lambda *_: proc.terminate())
+
+    q = queue.Queue()
+    threading.Thread(target=reader, args=(proc, q), daemon=True).start()
+
+    import time
+    held = {}                      # modificadores pulsados: nombre evdev -> etiqueta
+    scroll = None                  # {"dx","dy","last"} mientras hay scroll activo
+    gesture = None                 # {"kind","fingers","dx","dy","scale"}
+    last_update = {}               # throttle por tipo
+
+    def throttled(kind, now):
+        if now - last_update.get(kind, 0) < UPDATE_THROTTLE:
+            return True
+        last_update[kind] = now
+        return False
+
+    while True:
+        try:
+            line = q.get(timeout=0.1)
+        except queue.Empty:
+            line = ""
+        now = time.monotonic()
+
+        # Fin de scroll sintetizado por silencio
+        if scroll and now - scroll["last"] > SCROLL_IDLE_END:
+            emit({"t": "scroll", "state": "end",
+                  "dir": dominant_dir(scroll["dx"], scroll["dy"])})
+            scroll = None
+
+        if line is None:   # libinput murio (o acabo la muestra de prueba)
+            if scroll:
+                emit({"t": "scroll", "state": "end",
+                      "dir": dominant_dir(scroll["dx"], scroll["dy"])})
+            break
+        if not line:
+            continue
+
+        m = RE_KEY.search(line)
+        if m:
+            what, name, state = m.groups()
+            if what == "POINTER_BUTTON":
+                if state == "pressed" and name in BTNS:
+                    emit({"t": "button", "btn": BTNS[name]})
+                continue
+            if name in MODS:
+                if state == "pressed":
+                    held[name] = MODS[name]
+                    mods = sorted(set(v for k, v in held.items() if k != name))
+                    emit({"t": "key", "mods": mods, "key": MODS[name], "mod": True})
+                else:
+                    held.pop(name, None)
+                continue
+            if state == "pressed":
+                mods = sorted(set(held.values()))
+                emit({"t": "key", "mods": mods, "key": label_for(name), "mod": False})
+            continue
+
+        m = RE_GESTURE.search(line)
+        if m:
+            kind, state, fingers = m.group(1).lower(), m.group(2), int(m.group(3))
+            if state == "BEGIN":
+                gesture = {"kind": kind, "fingers": fingers, "dx": 0.0, "dy": 0.0, "scale": 1.0}
+                if kind == "hold":
+                    emit({"t": "gesture", "kind": kind, "state": "update",
+                          "fingers": fingers, "dx": 0, "dy": 0})
+            elif state == "UPDATE" and gesture:
+                fp = RE_FLOATPAIR.search(line)
+                if fp:
+                    gesture["dx"] += float(fp.group(1))
+                    gesture["dy"] += float(fp.group(2))
+                sc = RE_PINCH_SCALE.search(line)
+                if sc:
+                    gesture["scale"] = float(sc.group(1))
+                if not throttled(kind, now):
+                    emit({"t": "gesture", "kind": kind, "state": "update",
+                          "fingers": fingers,
+                          "dx": round(gesture["dx"], 2), "dy": round(gesture["dy"], 2)})
+            elif state == "END" and gesture:
+                if "cancelled" in line:
+                    emit({"t": "gesture", "kind": kind, "state": "cancel",
+                          "fingers": fingers, "dir": ""})
+                elif kind == "pinch":
+                    emit({"t": "gesture", "kind": kind, "state": "end",
+                          "fingers": fingers,
+                          "dir": "out" if gesture["scale"] >= 1.0 else "in"})
+                else:
+                    emit({"t": "gesture", "kind": kind, "state": "end",
+                          "fingers": fingers,
+                          "dir": dominant_dir(gesture["dx"], gesture["dy"])
+                                 if kind == "swipe" else ""})
+                gesture = None
+            continue
+
+        m = RE_SCROLL.search(line)
+        if m:
+            vert, horiz = float(m.group(1)), float(m.group(2))
+            if scroll is None:
+                scroll = {"dx": 0.0, "dy": 0.0, "last": now}
+            scroll["dx"] += horiz
+            scroll["dy"] += vert
+            scroll["last"] = now
+            if not throttled("scroll", now):
+                emit({"t": "scroll", "state": "update",
+                      "dx": round(scroll["dx"], 2), "dy": round(scroll["dy"], 2)})
+
+    proc.wait()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -34,6 +34,7 @@ Item {
     property bool showWifi: Config.bar.status.showWifi ?? true
     property bool showBluetooth: Config.bar.status.showBluetooth ?? true
     property bool showBattery: Config.bar.status.showBattery ?? true
+    property bool showCpuFreq: Config.bar.status.showCpuFreq ?? true
     property bool showLockStatus: Config.bar.status.showLockStatus ?? true
     property bool trayBackground: Config.bar.tray.background ?? false
     property bool trayCompact: Config.bar.tray.compact ?? false
@@ -69,6 +70,7 @@ Item {
         GlobalConfig.bar.status.showWifi = root.showWifi;
         GlobalConfig.bar.status.showBluetooth = root.showBluetooth;
         GlobalConfig.bar.status.showBattery = root.showBattery;
+        GlobalConfig.bar.status.showCpuFreq = root.showCpuFreq;
         GlobalConfig.bar.status.showLockStatus = root.showLockStatus;
         GlobalConfig.bar.tray.background = root.trayBackground;
         GlobalConfig.bar.tray.compact = root.trayCompact;
@@ -250,6 +252,14 @@ Item {
                                 propertyName: "showBattery",
                                 onToggled: function (checked) {
                                     root.showBattery = checked;
+                                    root.saveConfig();
+                                }
+                            },
+                            {
+                                label: qsTr("CPU frequency"),
+                                propertyName: "showCpuFreq",
+                                onToggled: function (checked) {
+                                    root.showCpuFreq = checked;
                                     root.saveConfig();
                                 }
                             },

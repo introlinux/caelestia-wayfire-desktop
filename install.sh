@@ -313,6 +313,19 @@ fi
 # Ceba la caché del máximo real del hardware (ver comentario en el helper)
 sudo /usr/local/bin/caelestia-cpufreq status >/dev/null
 
+# El OSD de entrada (teclas/gestos para videotutoriales, Super+K) necesita leer
+# los eventos de libinput, que requiere root. Mismo esquema que cpufreq: copia
+# root en /usr/local/bin + regla NOPASSWD solo para esa copia.
+log "Instalando caelestia-input-watch (helper root + regla sudoers)"
+sudo install -o root -g root -m 755 "$REPO/bin/caelestia-input-watch" /usr/local/bin/caelestia-input-watch
+printf '%s ALL=(root) NOPASSWD: /usr/local/bin/caelestia-input-watch\n' "$USER" \
+    | sudo tee /etc/sudoers.d/caelestia-inputosd >/dev/null
+sudo chmod 440 /etc/sudoers.d/caelestia-inputosd
+if ! sudo visudo -cf /etc/sudoers.d/caelestia-inputosd >/dev/null; then
+    sudo rm -f /etc/sudoers.d/caelestia-inputosd
+    warn "Regla sudoers inválida — el OSD de entrada no tendrá permisos"
+fi
+
 # Las apps gráficas lanzadas con sudo (gparted, synaptic...) pierden el tema y
 # tamaño del cursor al limpiarse el entorno; conservamos solo esas dos vars.
 log "Instalando regla sudoers del cursor (env_keep XCURSOR_*)"

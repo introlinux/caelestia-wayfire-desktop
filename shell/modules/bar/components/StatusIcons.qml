@@ -230,11 +230,11 @@ StyledRect {
             }
         }
 
-        // CPU frequency icon (visible si el sistema expone cpufreq;
-        // relleno + color de aviso cuando hay un tope activo)
+        // CPU frequency icon (visible si el sistema expone cpufreq y no se
+        // ha ocultado desde Settings; relleno + color de aviso con tope activo)
         WrappedLoader {
             name: "cpufreq"
-            active: CpuFreq.available
+            active: CpuFreq.available && (Config.bar.status.showCpuFreq ?? true)
 
             sourceComponent: MaterialIcon {
                 animate: true

@@ -20,6 +20,7 @@ ShellRoot {
     // }
 
     ConfigToasts {}
+    InputOsd {}
     RecordCountdown {}
     ScreenshotIpc {}
     Shortcuts {}
