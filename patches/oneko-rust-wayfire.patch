@@ -1,8 +1,8 @@
 diff --git a/src/main.rs b/src/main.rs
-index cb9caa5..8c6349c 100644
+index cb9caa5..ff398e1 100644
 --- a/src/main.rs
 +++ b/src/main.rs
-@@ -602,33 +602,160 @@ fn dir_from_delta(dx: f32, dy: f32) -> Dir {
+@@ -602,33 +602,168 @@ fn dir_from_delta(dx: f32, dy: f32) -> Dir {
      }
  }
  
@@ -127,7 +127,11 @@ index cb9caa5..8c6349c 100644
 +    interval_ms: u64,   // tick length; lower = faster animation AND chase
 +    radius: f32,        // cursor must come this close to wake the cat up
 +    stop_distance: f32, // cat parks this many px short of the pointer
-+    click_through: bool, // empty input region: cat never intercepts input (no click-to-freeze)
++    // Empty input region: the cat never intercepts input. Default, because a
++    // cat with an input region steals pointer focus from whatever it walks
++    // over - hover-driven shell panels see that as "pointer left" and close.
++    // --clickable restores the input region and click-to-freeze.
++    click_through: bool,
 +}
 +
 +const HELP: &str = "\
@@ -142,7 +146,11 @@ index cb9caa5..8c6349c 100644
 +  --distance <px>      how far short of the pointer the cat stops, so it
 +                       never sits under the cursor stealing scroll/click
 +                       events (default 40; 0 = classic touch-the-pointer)
-+  --click-through      never receive input at all (disables click-to-freeze)
++  --clickable          give the cat an input region: left-click freezes /
++                       unfreezes it. Off by default because the cat then
++                       steals pointer focus from hover-driven UI (panels
++                       close when it walks over them) and swallows
++                       clicks/scroll aimed at whatever is underneath
 +  -h, --help           show this help
 +";
 +
@@ -153,7 +161,7 @@ index cb9caa5..8c6349c 100644
 +            interval_ms: 125,
 +            radius: 150.0,
 +            stop_distance: 40.0,
-+            click_through: false,
++            click_through: true,
 +        };
 +        let mut args = std::env::args().skip(1);
 +        while let Some(arg) = args.next() {
@@ -168,7 +176,7 @@ index cb9caa5..8c6349c 100644
 +                "--interval" => cfg.interval_ms = num("--interval").max(30.0) as u64,
 +                "--radius" => cfg.radius = num("--radius").max(0.0),
 +                "--distance" => cfg.stop_distance = num("--distance").max(0.0),
-+                "--click-through" => cfg.click_through = true,
++                "--clickable" => cfg.click_through = false,
 +                "-h" | "--help" => {
 +                    print!("{HELP}");
 +                    std::process::exit(0);
@@ -185,7 +193,7 @@ index cb9caa5..8c6349c 100644
  
  // The Wayland surface/buffer is bigger than the cat (CANVAS_W x CANVAS_H),
  // with BUBBLE_H extra rows of empty space above it to draw a speech bubble
-@@ -806,6 +933,8 @@ struct App {
+@@ -806,6 +941,8 @@ struct App {
      cats: Vec<CatSurface>,
      active_output_id: Option<u32>, // which cat is currently chasing the cursor; the rest stay hidden
      rng_state: u32,                // xorshift32 seed/state, shared since only the active cat ever draws from it
@@ -194,7 +202,7 @@ index cb9caa5..8c6349c 100644
  }
  
  // Everything about a tick that actually affects the rendered frame. Compared
-@@ -862,6 +991,7 @@ struct CatSurface {
+@@ -862,6 +999,7 @@ struct CatSurface {
  // monitor), plus its own input region and freshly-seeded per-monitor state.
  // Called from OutputHandler::new_output whenever a monitor appears.
  fn spawn_cat_surface(
@@ -202,13 +210,17 @@ index cb9caa5..8c6349c 100644
      compositor: &CompositorState,
      layer_shell: &LayerShell,
      qh: &QueueHandle<App>,
-@@ -888,9 +1018,12 @@ fn spawn_cat_surface(
+@@ -886,11 +1024,14 @@ fn spawn_cat_surface(
+     layer.set_exclusive_zone(-1);
+     layer.set_keyboard_interactivity(KeyboardInteractivity::None);
  
-     // Input region covers only the cat's own sub-rect so it can receive
-     // clicks (to toggle frozen state) without the bubble area above it ever
+-    // Input region covers only the cat's own sub-rect so it can receive
+-    // clicks (to toggle frozen state) without the bubble area above it ever
 -    // blocking clicks.
-+    // blocking clicks. With --click-through the region stays empty and the
-+    // cat never intercepts any input.
++    // By default the input region stays empty so the cat never intercepts
++    // any input (see Config.click_through). With --clickable it covers only
++    // the cat's own sub-rect so it can receive clicks (to toggle frozen
++    // state) without the bubble area above it ever blocking clicks.
      let input_region = Region::new(compositor).expect("create input region");
 -    input_region.add(CAT_X_OFFSET, CAT_Y_OFFSET, SIZE as i32, SIZE as i32);
 +    if !cfg.click_through {
@@ -217,7 +229,7 @@ index cb9caa5..8c6349c 100644
      layer.wl_surface().set_input_region(Some(input_region.wl_region()));
  
      layer.commit();
-@@ -941,7 +1074,7 @@ fn next_u32(state: &mut u32) -> u32 {
+@@ -941,7 +1082,7 @@ fn next_u32(state: &mut u32) -> u32 {
  // are the global cursor position already converted into this monitor's own
  // coordinate space, so all the math below is identical to single-monitor
  // oneko - it just runs against whichever monitor is active right now.
@@ -226,7 +238,7 @@ index cb9caa5..8c6349c 100644
      // The cat only wakes up for the cursor once it's within CHASE_RADIUS;
      // movement farther away than that is treated the same as no movement
      // at all, so the cat isn't yanked out of its idle animations by every
-@@ -952,7 +1085,7 @@ fn tick_active(rng_state: &mut u32, pool: &mut SlotPool, local_x: f32, local_y:
+@@ -952,7 +1093,7 @@ fn tick_active(rng_state: &mut u32, pool: &mut SlotPool, local_x: f32, local_y:
      // make it give up and fall asleep instead of catching up.
      let dist = ((local_x - cat.win_x).powi(2) + (local_y - cat.win_y).powi(2)).sqrt();
      let was_chasing = cat.idle_ticks < 3;
@@ -235,7 +247,7 @@ index cb9caa5..8c6349c 100644
  
      // "Idle" means the cursor has barely moved since last tick (and is near).
      let cursor_moved = near
-@@ -1000,11 +1133,15 @@ fn tick_active(rng_state: &mut u32, pool: &mut SlotPool, local_x: f32, local_y:
+@@ -1000,11 +1141,15 @@ fn tick_active(rng_state: &mut u32, pool: &mut SlotPool, local_x: f32, local_y:
          }
      }
  
@@ -254,7 +266,7 @@ index cb9caa5..8c6349c 100644
          let dx = local_x - cat.win_x;
          let dy = local_y - cat.win_y;
  
-@@ -1012,10 +1149,12 @@ fn tick_active(rng_state: &mut u32, pool: &mut SlotPool, local_x: f32, local_y:
+@@ -1012,10 +1157,12 @@ fn tick_active(rng_state: &mut u32, pool: &mut SlotPool, local_x: f32, local_y:
              cat.dir = dir_from_delta(dx, dy);
          }
  
@@ -269,7 +281,7 @@ index cb9caa5..8c6349c 100644
      }
  
      cat.frame = !cat.frame; // alternates true/false each tick, for 2-frame poses
-@@ -1174,8 +1313,9 @@ impl OutputHandler for App {
+@@ -1174,8 +1321,9 @@ impl OutputHandler for App {
              (1920.0, 1080.0)
          });
  
@@ -280,7 +292,7 @@ index cb9caa5..8c6349c 100644
              &self.compositor,
              &self.layer_shell,
              qh,
-@@ -1370,6 +1510,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+@@ -1370,6 +1518,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
          cats: Vec::new(),
          active_output_id: None,
          rng_state: seed,
@@ -289,7 +301,7 @@ index cb9caa5..8c6349c 100644
      };
  
      // Main loop: one animation tick every 125ms. Every connected monitor
-@@ -1379,7 +1521,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+@@ -1379,7 +1529,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
      // currently contains it, chase/animate only that one, and hide the cat
      // on every other monitor.
      while !app.exit {
@@ -298,7 +310,7 @@ index cb9caa5..8c6349c 100644
  
          let active_id = app
              .cats
-@@ -1402,7 +1544,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+@@ -1402,7 +1552,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
              if Some(cat.output_id) == app.active_output_id {
                  let local_x = cursor_x - cat.logical_position.0 as f32;
                  let local_y = cursor_y - cat.logical_position.1 as f32;
@@ -307,7 +319,7 @@ index cb9caa5..8c6349c 100644
                  cat.visible = true;
              } else if cat.visible {
                  cat.hide();
-@@ -1412,7 +1554,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+@@ -1412,7 +1562,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
  
          // Flushes pending requests (margin + buffer commit) and processes events.
          event_queue.roundtrip(&mut app)?;
