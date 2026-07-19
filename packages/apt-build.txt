@@ -66,6 +66,3 @@ libevdev-dev
 libboost-dev
 libgtkmm-3.0-dev
 libxkbregistry-dev
-# oneko-rust (gato de escritorio)
-rustc
-cargo

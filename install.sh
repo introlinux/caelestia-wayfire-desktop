@@ -233,19 +233,21 @@ if [ "$SKIP_BUILDS" -eq 0 ]; then
     # Port a Wayfire del oneko de Hyprland: el parche sustituye `hyprctl
     # cursorpos` por el método window-rules/get_cursor_position del IPC de
     # Wayfire (requiere el plugin ipc-rules, ya en plugins= de wayfire.ini).
-    # El marcador "Wayfire port" del --help distingue el binario parcheado.
-    if "$HOME/.local/bin/oneko-rust" --help 2>/dev/null | grep -q "Wayfire port"; then
-        log "oneko-rust (port Wayfire) ya instalado — omitiendo"
-    else
-        log "Compilando oneko-rust ($ONEKO_COMMIT) con el parche de IPC de Wayfire"
-        rm -rf "$BUILD_DIR/oneko-rust"
-        git clone "$ONEKO_REPO" "$BUILD_DIR/oneko-rust"
-        git -C "$BUILD_DIR/oneko-rust" checkout "$ONEKO_COMMIT"
-        git -C "$BUILD_DIR/oneko-rust" apply "$REPO/patches/oneko-rust-wayfire.patch"
-        cargo build --release --manifest-path "$BUILD_DIR/oneko-rust/Cargo.toml"
-        install -Dm755 "$BUILD_DIR/oneko-rust/target/release/oneko-rust" \
-            "$HOME/.local/bin/oneko-rust"
-    fi
+    # Se instala el binario precompilado del repo (x86_64, autónomo: el
+    # backend Wayland de smithay es Rust puro y solo enlaza libc) para no
+    # arrastrar rustc+cargo como dependencia de compilación.
+    log "Instalando oneko-rust (binario precompilado)"
+    install -Dm755 "$REPO/prebuilt/oneko-rust" "$HOME/.local/bin/oneko-rust"
+    # Para compilarlo desde las fuentes (p. ej. en otra arquitectura),
+    # instala rustc y cargo (sudo apt install rustc cargo) y sustituye el
+    # install de arriba por:
+    #   rm -rf "$BUILD_DIR/oneko-rust"
+    #   git clone "$ONEKO_REPO" "$BUILD_DIR/oneko-rust"
+    #   git -C "$BUILD_DIR/oneko-rust" checkout "$ONEKO_COMMIT"
+    #   git -C "$BUILD_DIR/oneko-rust" apply "$REPO/patches/oneko-rust-wayfire.patch"
+    #   cargo build --release --manifest-path "$BUILD_DIR/oneko-rust/Cargo.toml"
+    #   install -Dm755 "$BUILD_DIR/oneko-rust/target/release/oneko-rust" \
+    #       "$HOME/.local/bin/oneko-rust"
 
     # --- CLI de Caelestia (python) ---------------------------------------------
     if command -v caelestia >/dev/null && [ -x /usr/local/bin/caelestia ]; then
