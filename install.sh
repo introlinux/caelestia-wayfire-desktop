@@ -29,6 +29,8 @@ WCM_REPO="https://github.com/WayfireWM/wcm.git"
 WCM_TAG="v0.10.0"
 CAELESTIA_CLI_REPO="https://github.com/caelestia-dots/cli.git"
 CAELESTIA_CLI_COMMIT="eddee4dec"
+ONEKO_REPO="https://github.com/Abishek-Pechiappan/Oneko-Rust-Arch"
+ONEKO_COMMIT="ed7a5312670c1cb9bd7b41647c7a4a6522db19d1"
 NERD_FONT_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/CascadiaCode.zip"
 
 SKIP_APT=0 SKIP_BUILDS=0 ONLY_DOTFILES=0
@@ -225,6 +227,24 @@ if [ "$SKIP_BUILDS" -eq 0 ]; then
         sudo ninja -C "$BUILD_DIR/gpu-screen-recorder/build" install
         sudo setcap cap_sys_admin+ep /usr/bin/gsr-kms-server 2>/dev/null \
             || warn "No se pudo aplicar setcap a gsr-kms-server (la grabación KMS pedirá contraseña)"
+    fi
+
+    # --- oneko-rust (gato de escritorio que persigue el cursor) ---------------
+    # Port a Wayfire del oneko de Hyprland: el parche sustituye `hyprctl
+    # cursorpos` por el método window-rules/get_cursor_position del IPC de
+    # Wayfire (requiere el plugin ipc-rules, ya en plugins= de wayfire.ini).
+    # El marcador "Wayfire port" del --help distingue el binario parcheado.
+    if "$HOME/.local/bin/oneko-rust" --help 2>/dev/null | grep -q "Wayfire port"; then
+        log "oneko-rust (port Wayfire) ya instalado — omitiendo"
+    else
+        log "Compilando oneko-rust ($ONEKO_COMMIT) con el parche de IPC de Wayfire"
+        rm -rf "$BUILD_DIR/oneko-rust"
+        git clone "$ONEKO_REPO" "$BUILD_DIR/oneko-rust"
+        git -C "$BUILD_DIR/oneko-rust" checkout "$ONEKO_COMMIT"
+        git -C "$BUILD_DIR/oneko-rust" apply "$REPO/patches/oneko-rust-wayfire.patch"
+        cargo build --release --manifest-path "$BUILD_DIR/oneko-rust/Cargo.toml"
+        install -Dm755 "$BUILD_DIR/oneko-rust/target/release/oneko-rust" \
+            "$HOME/.local/bin/oneko-rust"
     fi
 
     # --- CLI de Caelestia (python) ---------------------------------------------

@@ -1,0 +1,318 @@
+diff --git a/src/main.rs b/src/main.rs
+index cb9caa5..8c6349c 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -602,33 +602,160 @@ fn dir_from_delta(dx: f32, dy: f32) -> Dir {
+     }
+ }
+ 
+-// Global cursor position in screen (layout) coordinates, via Hyprland's own
+-// CLI. This is the one Hyprland-specific dependency in the whole program;
+-// porting to another wlroots compositor means replacing this function with
+-// whatever that compositor exposes for global pointer position. Returns
+-// (0, 0) if hyprctl isn't available or its output can't be parsed.
+-fn mouse_pos() -> (f32, f32) {
+-    let Ok(output) = std::process::Command::new("hyprctl")
+-        .args(["cursorpos"])
+-        .output()
+-    else {
+-        return (0.0, 0.0);
+-    };
+-    let s = String::from_utf8_lossy(&output.stdout);
+-    let mut parts = s.trim().splitn(2, ", ");
+-    let x = parts.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+-    let y = parts.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+-    (x, y)
++// Global cursor position in screen (layout) coordinates, via Wayfire's IPC
++// socket (requires the ipc + ipc-rules plugins; method
++// window-rules/get_cursor_position replies {"result":"ok","pos":{"x":..,"y":..}}
++// in the same layout coordinates Hyprland's cursorpos used). This is the one
++// compositor-specific dependency in the whole program. The connection is kept
++// open across ticks and silently re-established if Wayfire restarts. Returns
++// (0, 0) if the socket isn't available or the reply can't be parsed.
++struct CursorIpc {
++    stream: Option<std::os::unix::net::UnixStream>,
++}
++
++impl CursorIpc {
++    fn new() -> Self {
++        CursorIpc { stream: None }
++    }
++
++    // $WAYFIRE_SOCKET when launched from within the session, otherwise scan
++    // $XDG_RUNTIME_DIR for wayfire-*.socket (there's one per compositor run).
++    fn socket_path() -> Option<std::path::PathBuf> {
++        if let Ok(path) = std::env::var("WAYFIRE_SOCKET") {
++            return Some(path.into());
++        }
++        let dir = std::env::var("XDG_RUNTIME_DIR").ok()?;
++        std::fs::read_dir(dir)
++            .ok()?
++            .filter_map(|e| e.ok())
++            .map(|e| e.path())
++            .find(|p| {
++                p.file_name()
++                    .and_then(|n| n.to_str())
++                    .map_or(false, |n| n.starts_with("wayfire") && n.ends_with(".socket"))
++            })
++    }
++
++    fn connect() -> Option<std::os::unix::net::UnixStream> {
++        let stream = std::os::unix::net::UnixStream::connect(Self::socket_path()?).ok()?;
++        // Bounded so a stalled compositor can't wedge the animation loop.
++        let timeout = Some(Duration::from_millis(250));
++        stream.set_read_timeout(timeout).ok()?;
++        stream.set_write_timeout(timeout).ok()?;
++        Some(stream)
++    }
++
++    // Wayfire IPC framing, both directions: u32 LE payload length + JSON.
++    fn query(&mut self) -> Option<(f32, f32)> {
++        use std::io::{Read, Write};
++        if self.stream.is_none() {
++            self.stream = Self::connect();
++        }
++        let stream = self.stream.as_mut()?;
++        let msg: &[u8] = br#"{"method":"window-rules/get_cursor_position","data":{}}"#;
++        let mut packet = Vec::with_capacity(4 + msg.len());
++        packet.extend_from_slice(&(msg.len() as u32).to_le_bytes());
++        packet.extend_from_slice(msg);
++        let reply = (|| {
++            stream.write_all(&packet).ok()?;
++            let mut len_buf = [0u8; 4];
++            stream.read_exact(&mut len_buf).ok()?;
++            let len = u32::from_le_bytes(len_buf) as usize;
++            if len > (1 << 20) {
++                return None; // desynced framing; force a reconnect
++            }
++            let mut buf = vec![0u8; len];
++            stream.read_exact(&mut buf).ok()?;
++            String::from_utf8(buf).ok()
++        })();
++        let Some(reply) = reply else {
++            self.stream = None;
++            return None;
++        };
++        let pos = &reply[reply.find("\"pos\"")?..];
++        Some((json_number(pos, "\"x\":")?, json_number(pos, "\"y\":")?))
++    }
++}
++
++// Extracts the number right after `key` (e.g. `"x":`) from a JSON snippet.
++// Enough for the fixed reply shape above; spares a serde dependency.
++fn json_number(s: &str, key: &str) -> Option<f32> {
++    let rest = s[s.find(key)? + key.len()..].trim_start();
++    let end = rest
++        .find(|c: char| !c.is_ascii_digit() && !"-+.eE".contains(c))
++        .unwrap_or(rest.len());
++    rest[..end].parse().ok()
+ }
+ 
+ // The cat sprite itself is always exactly SIZE x SIZE pixels.
+ const SIZE: u32 = 32;
+ 
+-// The cursor must be within this many pixels of the cat before it'll wake up
+-// and chase - see the `near` check in tick_active. Cursor movement farther
+-// away than this is ignored entirely, so the cat settles into its idle
+-// animations instead of reacting to every mouse movement on screen.
+-const CHASE_RADIUS: f32 = 150.0;
++// Runtime-tunable behavior, parsed once from the command line in main().
++// Defaults match the original hardcoded values (except stop_distance,
++// which used to be 0: the cat parked right under the pointer, and since
++// its input region sat under the cursor it swallowed scroll/click events
++// meant for the window below).
++#[derive(Clone, Copy)]
++struct Config {
++    speed: f32,         // easing fraction per tick (0..1); higher = snappier cat
++    interval_ms: u64,   // tick length; lower = faster animation AND chase
++    radius: f32,        // cursor must come this close to wake the cat up
++    stop_distance: f32, // cat parks this many px short of the pointer
++    click_through: bool, // empty input region: cat never intercepts input (no click-to-freeze)
++}
++
++const HELP: &str = "\
++oneko-rust (Wayfire port): a desktop cat that chases your cursor.
++
++Options:
++  --speed <0.05-1.0>   easing per tick, fraction of remaining distance (default 0.3)
++  --interval <ms>      animation tick length; also scales chase speed and
++                       idle-timing (default 125)
++  --radius <px>        wake-up distance: cursor movement farther away than
++                       this is ignored (default 150)
++  --distance <px>      how far short of the pointer the cat stops, so it
++                       never sits under the cursor stealing scroll/click
++                       events (default 40; 0 = classic touch-the-pointer)
++  --click-through      never receive input at all (disables click-to-freeze)
++  -h, --help           show this help
++";
++
++impl Config {
++    fn from_args() -> Config {
++        let mut cfg = Config {
++            speed: 0.3,
++            interval_ms: 125,
++            radius: 150.0,
++            stop_distance: 40.0,
++            click_through: false,
++        };
++        let mut args = std::env::args().skip(1);
++        while let Some(arg) = args.next() {
++            let mut num = |name: &str| -> f32 {
++                args.next().and_then(|v| v.parse().ok()).unwrap_or_else(|| {
++                    eprintln!("oneko: {name} needs a numeric value (see --help)");
++                    std::process::exit(2);
++                })
++            };
++            match arg.as_str() {
++                "--speed" => cfg.speed = num("--speed").clamp(0.05, 1.0),
++                "--interval" => cfg.interval_ms = num("--interval").max(30.0) as u64,
++                "--radius" => cfg.radius = num("--radius").max(0.0),
++                "--distance" => cfg.stop_distance = num("--distance").max(0.0),
++                "--click-through" => cfg.click_through = true,
++                "-h" | "--help" => {
++                    print!("{HELP}");
++                    std::process::exit(0);
++                }
++                other => {
++                    eprintln!("oneko: unknown option '{other}' (see --help)");
++                    std::process::exit(2);
++                }
++            }
++        }
++        cfg
++    }
++}
+ 
+ // The Wayland surface/buffer is bigger than the cat (CANVAS_W x CANVAS_H),
+ // with BUBBLE_H extra rows of empty space above it to draw a speech bubble
+@@ -806,6 +933,8 @@ struct App {
+     cats: Vec<CatSurface>,
+     active_output_id: Option<u32>, // which cat is currently chasing the cursor; the rest stay hidden
+     rng_state: u32,                // xorshift32 seed/state, shared since only the active cat ever draws from it
++    cursor_ipc: CursorIpc,         // persistent Wayfire IPC connection for cursor queries
++    cfg: Config,
+ }
+ 
+ // Everything about a tick that actually affects the rendered frame. Compared
+@@ -862,6 +991,7 @@ struct CatSurface {
+ // monitor), plus its own input region and freshly-seeded per-monitor state.
+ // Called from OutputHandler::new_output whenever a monitor appears.
+ fn spawn_cat_surface(
++    cfg: &Config,
+     compositor: &CompositorState,
+     layer_shell: &LayerShell,
+     qh: &QueueHandle<App>,
+@@ -888,9 +1018,12 @@ fn spawn_cat_surface(
+ 
+     // Input region covers only the cat's own sub-rect so it can receive
+     // clicks (to toggle frozen state) without the bubble area above it ever
+-    // blocking clicks.
++    // blocking clicks. With --click-through the region stays empty and the
++    // cat never intercepts any input.
+     let input_region = Region::new(compositor).expect("create input region");
+-    input_region.add(CAT_X_OFFSET, CAT_Y_OFFSET, SIZE as i32, SIZE as i32);
++    if !cfg.click_through {
++        input_region.add(CAT_X_OFFSET, CAT_Y_OFFSET, SIZE as i32, SIZE as i32);
++    }
+     layer.wl_surface().set_input_region(Some(input_region.wl_region()));
+ 
+     layer.commit();
+@@ -941,7 +1074,7 @@ fn next_u32(state: &mut u32) -> u32 {
+ // are the global cursor position already converted into this monitor's own
+ // coordinate space, so all the math below is identical to single-monitor
+ // oneko - it just runs against whichever monitor is active right now.
+-fn tick_active(rng_state: &mut u32, pool: &mut SlotPool, local_x: f32, local_y: f32, cat: &mut CatSurface) {
++fn tick_active(cfg: &Config, rng_state: &mut u32, pool: &mut SlotPool, local_x: f32, local_y: f32, cat: &mut CatSurface) {
+     // The cat only wakes up for the cursor once it's within CHASE_RADIUS;
+     // movement farther away than that is treated the same as no movement
+     // at all, so the cat isn't yanked out of its idle animations by every
+@@ -952,7 +1085,7 @@ fn tick_active(rng_state: &mut u32, pool: &mut SlotPool, local_x: f32, local_y:
+     // make it give up and fall asleep instead of catching up.
+     let dist = ((local_x - cat.win_x).powi(2) + (local_y - cat.win_y).powi(2)).sqrt();
+     let was_chasing = cat.idle_ticks < 3;
+-    let near = was_chasing || dist <= CHASE_RADIUS;
++    let near = was_chasing || dist <= cfg.radius;
+ 
+     // "Idle" means the cursor has barely moved since last tick (and is near).
+     let cursor_moved = near
+@@ -1000,11 +1133,15 @@ fn tick_active(rng_state: &mut u32, pool: &mut SlotPool, local_x: f32, local_y:
+         }
+     }
+ 
+-    // Chase the cursor: ease toward it (30% of the remaining distance
++    // Chase the cursor: ease toward it (cfg.speed of the remaining distance
+     // per tick, so movement looks smooth rather than snapping), clamped
+     // so the cat can't leave this monitor. Skipped while frozen or while
+-    // the cursor is outside CHASE_RADIUS.
+-    if !cat.frozen && near {
++    // the cursor is outside cfg.radius. The cat aims at a point
++    // cfg.stop_distance short of the pointer (along the approach line)
++    // instead of the pointer itself, so its input region never ends up
++    // under the cursor swallowing scroll/click events meant for the
++    // window below.
++    if !cat.frozen && near && dist > cfg.stop_distance {
+         let dx = local_x - cat.win_x;
+         let dy = local_y - cat.win_y;
+ 
+@@ -1012,10 +1149,12 @@ fn tick_active(rng_state: &mut u32, pool: &mut SlotPool, local_x: f32, local_y:
+             cat.dir = dir_from_delta(dx, dy);
+         }
+ 
++        // Shrink the delta so its endpoint lands on the stop ring.
++        let scale = (dist - cfg.stop_distance) / dist;
+         let max_x = (cat.logical_size.0 - SIZE as f32).max(0.0);
+         let max_y = (cat.logical_size.1 - SIZE as f32).max(0.0);
+-        cat.win_x = (cat.win_x + dx * 0.3).clamp(0.0, max_x);
+-        cat.win_y = (cat.win_y + dy * 0.3).clamp(0.0, max_y);
++        cat.win_x = (cat.win_x + dx * scale * cfg.speed).clamp(0.0, max_x);
++        cat.win_y = (cat.win_y + dy * scale * cfg.speed).clamp(0.0, max_y);
+     }
+ 
+     cat.frame = !cat.frame; // alternates true/false each tick, for 2-frame poses
+@@ -1174,8 +1313,9 @@ impl OutputHandler for App {
+             (1920.0, 1080.0)
+         });
+ 
+-        let init_cursor = mouse_pos();
++        let init_cursor = self.cursor_ipc.query().unwrap_or((0.0, 0.0));
+         let cat = spawn_cat_surface(
++            &self.cfg,
+             &self.compositor,
+             &self.layer_shell,
+             qh,
+@@ -1370,6 +1510,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+         cats: Vec::new(),
+         active_output_id: None,
+         rng_state: seed,
++        cursor_ipc: CursorIpc::new(),
++        cfg: Config::from_args(),
+     };
+ 
+     // Main loop: one animation tick every 125ms. Every connected monitor
+@@ -1379,7 +1521,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+     // currently contains it, chase/animate only that one, and hide the cat
+     // on every other monitor.
+     while !app.exit {
+-        let (cursor_x, cursor_y) = mouse_pos();
++        let (cursor_x, cursor_y) = app.cursor_ipc.query().unwrap_or((0.0, 0.0));
+ 
+         let active_id = app
+             .cats
+@@ -1402,7 +1544,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+             if Some(cat.output_id) == app.active_output_id {
+                 let local_x = cursor_x - cat.logical_position.0 as f32;
+                 let local_y = cursor_y - cat.logical_position.1 as f32;
+-                tick_active(&mut app.rng_state, &mut app.pool, local_x, local_y, cat);
++                tick_active(&app.cfg, &mut app.rng_state, &mut app.pool, local_x, local_y, cat);
+                 cat.visible = true;
+             } else if cat.visible {
+                 cat.hide();
+@@ -1412,7 +1554,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+ 
+         // Flushes pending requests (margin + buffer commit) and processes events.
+         event_queue.roundtrip(&mut app)?;
+-        thread::sleep(Duration::from_millis(125));
++        thread::sleep(Duration::from_millis(app.cfg.interval_ms));
+     }
+ 
+     Ok(())

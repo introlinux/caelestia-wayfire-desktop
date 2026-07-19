@@ -406,6 +406,13 @@ Item {
                 source: Paths.absolutePath(Config.paths.mediaGif)
                 asynchronous: true
                 fillMode: AnimatedImage.PreserveAspectFit
+
+                // Click-to-toggle the oneko desktop cat (kill it if running, launch it otherwise)
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: Quickshell.execDetached(["sh", "-c", "pkill -x oneko-rust || exec " + Quickshell.env("HOME") + "/.local/bin/oneko-rust"])
+                }
             }
         }
     }

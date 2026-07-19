@@ -85,6 +85,10 @@ izquierda; acepta arrastrar y soltar archivos sobre sus herramientas.
   `Super+arrastrar` si hace falta.
 - Grabación de pantalla con `gpu-screen-recorder`; los vídeos van a
   `~/Vídeos/Recordings`.
+- Gato de escritorio `oneko-rust` (persigue el cursor; port propio a Wayfire
+  vía IPC). Arranca con la sesión y se puede encender/apagar con un clic en
+  el gato de la sección Multimedia del dashboard. Opciones en
+  `oneko-rust --help` (velocidad, radio, distancia de parada…).
 
 ## Créditos
 
@@ -92,6 +96,7 @@ izquierda; acepta arrastrar y soltar archivos sobre sus herramientas.
 - [Quickshell](https://quickshell.outfoxxed.me/) — runtime QML para Wayland
 - [Wayfire](https://wayfire.org/) — compositor
 - [gpu-screen-recorder](https://git.dec05eba.com/gpu-screen-recorder/about/) — dec05eba
+- [Oneko-Rust-Arch](https://github.com/Abishek-Pechiappan/Oneko-Rust-Arch) — oneko para Wayland (GPLv3), portado a Wayfire con `patches/oneko-rust-wayfire.patch`
 - [nerd-fonts](https://github.com/ryanoasis/nerd-fonts) — CaskaydiaCove
 - Tema de cursor **clay-dark** y tema GTK/iconos **Yaru-wartybrown** (Ubuntu)
 
