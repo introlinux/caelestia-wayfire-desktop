@@ -84,6 +84,12 @@ Region {
         width: panel.width * (1 - root.panels.popoutsWrapper.offsetScale)
     }
 
+    R {
+        panel: root.panels.appgrid
+        width: panel.width * (1 - panel.offsetScale)
+        height: panel.height * (1 - panel.offsetScale)
+    }
+
     component R: Region {
         required property Item panel
 

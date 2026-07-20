@@ -19,7 +19,7 @@ PanelWindow {
     required property var popouts
 
     readonly property bool shouldShow: visibilities.launcher || visibilities.session ||
-                                       visibilities.sidebar || popouts.isDetached
+                                       visibilities.sidebar || visibilities.appgrid || popouts.isDetached
 
     visible: shouldShow
 
@@ -46,6 +46,7 @@ PanelWindow {
             root.visibilities.session = false;
             root.visibilities.sidebar = false;
             root.visibilities.dashboard = false;
+            root.visibilities.appgrid = false;
         }
     }
 }

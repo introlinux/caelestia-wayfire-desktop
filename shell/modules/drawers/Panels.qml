@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Caelestia.Config
 import qs.components
+import qs.modules.appgrid as AppGrid
 import qs.modules.bar as Bar
 import qs.modules.dashboard as Dashboard
 import qs.modules.launcher as Launcher
@@ -37,6 +38,7 @@ Item {
     readonly property alias miniapps: miniapps
     readonly property alias toasts: toasts
     readonly property alias sidebar: sidebar
+    readonly property alias appgrid: appgrid
 
     anchors.fill: parent
     anchors.margins: borderThickness
@@ -171,5 +173,13 @@ Item {
         anchors.top: notifications.bottom
         anchors.bottom: utilities.top
         anchors.right: parent.right
+    }
+
+    AppGrid.Wrapper {
+        id: appgrid
+
+        visibilities: root.visibilities
+
+        anchors.fill: parent
     }
 }

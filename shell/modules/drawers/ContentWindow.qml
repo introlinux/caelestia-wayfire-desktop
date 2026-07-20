@@ -43,13 +43,14 @@ StyledWindow {
         visibilities.launcher = false;
         visibilities.session = false;
         visibilities.dashboard = false;
+        visibilities.appgrid = false;
     }
 
     name: "drawers"
     WlrLayershell.exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: {
-        if (visibilities.launcher || visibilities.session)
+        if (visibilities.launcher || visibilities.session || visibilities.appgrid)
             return WlrKeyboardFocus.Exclusive;
         else if (panels.dashboard.needsKeyboard)
             return WlrKeyboardFocus.OnDemand;
@@ -93,7 +94,7 @@ StyledWindow {
 
     StyledRect {
         anchors.fill: parent
-        opacity: visibilities.session && Config.session.enabled ? 0.5 : 0
+        opacity: (visibilities.session && Config.session.enabled) || visibilities.appgrid ? 0.5 : 0
         color: Colours.palette.m3scrim
 
         Behavior on opacity {

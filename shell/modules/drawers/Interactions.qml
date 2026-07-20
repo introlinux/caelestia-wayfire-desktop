@@ -262,7 +262,7 @@ CustomMouseArea {
         // instant hover-open fired constantly by accident — the pointer must
         // rest in the strip for dashboardShowTimer's interval before the
         // panel deploys. Closing stays immediate.
-        const showDashboard = Config.dashboard.showOnHover && inTopPanel(panels.dashboard, x, y);
+        const showDashboard = Config.dashboard.showOnHover && inTopPanel(panels.dashboard, x, y) && !visibilities.appgrid;
 
         if (!dashboardShortcutActive) {
             if (showDashboard) {
@@ -396,6 +396,10 @@ CustomMouseArea {
                 // Y con utilities, su vecino de la derecha
                 if (root.visibilities.utilities)
                     root.visibilities.utilities = false;
+
+                // Y con la app grid, que ocupa toda la pantalla
+                if (root.visibilities.appgrid)
+                    root.visibilities.appgrid = false;
             }
         }
 
@@ -406,6 +410,10 @@ CustomMouseArea {
                 if (!inDashboardArea) {
                     root.dashboardShortcutActive = true;
                 }
+
+                // Exclusión con la app grid, que ocupa toda la pantalla
+                if (root.visibilities.appgrid)
+                    root.visibilities.appgrid = false;
             } else {
                 // Dashboard hidden, clear shortcut flag
                 root.dashboardShortcutActive = false;
@@ -439,9 +447,31 @@ CustomMouseArea {
                 if (!inUtilitiesArea) {
                     root.utilitiesShortcutActive = true;
                 }
+
+                // Exclusión con la app grid, que ocupa toda la pantalla
+                if (root.visibilities.appgrid)
+                    root.visibilities.appgrid = false;
             } else {
                 // Utilities hidden, clear shortcut flag
                 root.utilitiesShortcutActive = false;
+            }
+        }
+
+        // La app grid ocupa la mayor parte de la pantalla (solo por atajo, sin
+        // zona de hover propia) — al abrirse cierra el resto de docks/paneles
+        // que puedan solaparse con ella, mismo patrón "la acción más reciente
+        // gana" que launcher/utilities/miniapps entre sí.
+        function onAppgridChanged() {
+            if (root.visibilities.appgrid) {
+                root.visibilities.launcher = false;
+                root.visibilities.dashboard = false;
+                root.visibilities.utilities = false;
+                root.visibilities.sidebar = false;
+
+                if (root.visibilities.miniapps && !root.miniappsDragActive) {
+                    miniappsHideTimer.stop();
+                    root.visibilities.miniapps = false;
+                }
             }
         }
 

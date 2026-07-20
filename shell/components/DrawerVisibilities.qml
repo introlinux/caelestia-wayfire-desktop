@@ -10,4 +10,5 @@ PersistentProperties {
     property bool sidebar
     property bool windowControls
     property bool miniapps
+    property bool appgrid
 }
