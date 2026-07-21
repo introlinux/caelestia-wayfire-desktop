@@ -337,6 +337,29 @@ if ! sudo visudo -cf /etc/sudoers.d/caelestia-cursor >/dev/null; then
     warn "Regla sudoers del cursor inválida — descartada"
 fi
 
+# Las apps que se lanzan con pkexec necesitan dos cosas caras si se dejan
+# permanentes: un `xhost +si:localuser:root` para hablar con Xwayland y un
+# agente polkit residente (~95 MB de PSS, y se hincha a más de 200 de RSS en
+# cuanto dibuja un diálogo). gui-pkexec monta ambas al vuelo y las desmonta al
+# salir, así que ninguna está en el [autostart] de wayfire.ini.
+#
+# Los .desktop se generan a partir de los del sistema en vez de versionar una
+# copia: así no se quedan atrás cuando el paquete actualice nombres, iconos o
+# traducciones, y solo se crean si la app está instalada.
+log "Generando lanzadores .desktop que pasan por gui-pkexec"
+mkdir -p "$HOME/.local/share/applications"
+# El comando va explícito y no se reutiliza el Exec del sistema: el de synaptic
+# apunta a synaptic-pkexec, que haría un pkexec anidado dentro de gui-pkexec.
+for entry in "gparted|/usr/sbin/gparted %f" "synaptic|/usr/sbin/synaptic"; do
+    app="${entry%%|*}"; cmd="${entry#*|}"
+    src="/usr/share/applications/$app.desktop"
+    [ -f "$src" ] || continue
+    dst="$HOME/.local/share/applications/$app.desktop"
+    backup "$dst"
+    sed "s|^Exec=.*|Exec=$HOME/.local/bin/gui-pkexec $cmd|" "$src" > "$dst"
+done
+update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+
 log "Instalando configuraciones en ~/.config"
 install_templated "$REPO/config/wayfire.ini"                      "$HOME/.config/wayfire.ini"
 install_templated "$REPO/config/environment.d/50-local-bin.conf"  "$HOME/.config/environment.d/50-local-bin.conf"

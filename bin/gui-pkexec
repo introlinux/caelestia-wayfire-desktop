@@ -1,0 +1,80 @@
+#!/bin/bash
+# Ejecuta una aplicación gráfica como root en la sesión Wayland.
+#
+# Dos cosas hacen falta y las dos son caras si se dejan permanentes:
+#
+#  1. Acceso al display. Un proceso root no puede hablar con el compositor
+#     Wayland (el socket es del usuario), así que la app cae a X11 vía Xwayland
+#     y root necesita permiso explícito. Se concede solo mientras dura la app,
+#     en vez de con un `xhost +si:localuser:root` en el [autostart] de wayfire.
+#
+#  2. Un agente polkit registrado, o pkexec no puede pedir la contraseña de
+#     forma gráfica. Residente cuesta ~95 MB de PSS, y se hincha por encima de
+#     200 MB de RSS en cuanto dibuja un diálogo sin volver a soltarlo. Aquí se
+#     levanta al vuelo y se mata al salir, así que no cuesta nada en reposo.
+#
+# Sustituye a `1_xhost` y `1_polkit` del [autostart] de wayfire.ini.
+set -u
+
+POLKIT_AGENT=/usr/libexec/hyprpolkitagent
+
+if [ $# -eq 0 ]; then
+    echo "uso: $(basename "$0") COMANDO [ARGS...]" >&2
+    exit 2
+fi
+
+warn() {
+    echo "$(basename "$0"): $1" >&2
+    command -v notify-send >/dev/null 2>&1 &&
+        notify-send -u critical "$(basename "$0")" "$1"
+}
+
+granted=no
+agent_pid=""
+
+# Se ejecuta pase lo que pase: no dejar el display abierto a root ni un agente
+# huérfano si la app se interrumpe.
+cleanup() {
+    [ "$granted" = yes ] && xhost -SI:localuser:root >/dev/null 2>&1
+    [ -n "$agent_pid" ] && kill "$agent_pid" 2>/dev/null
+    return 0
+}
+trap cleanup EXIT INT TERM
+
+# ── Agente polkit al vuelo ────────────────────────────────────────────────
+# Solo si no hay ya uno: si el usuario tiene un agente residente, ni lo tocamos
+# ni lo matamos al final.
+if ! pgrep -x "$(basename "$POLKIT_AGENT")" >/dev/null 2>&1 && [ -x "$POLKIT_AGENT" ]; then
+    setsid "$POLKIT_AGENT" >/dev/null 2>&1 &
+    agent_pid=$!
+
+    # No hay forma de preguntarle a polkitd si ya hay un agente registrado, así
+    # que damos un margen acotado. Si el agente se cae en ese rato, dejamos de
+    # esperar y pkexec fallará de forma visible más abajo.
+    for _ in $(seq 15); do
+        sleep 0.1
+        if ! kill -0 "$agent_pid" 2>/dev/null; then
+            agent_pid=""
+            break
+        fi
+    done
+fi
+
+# ── Permiso de X para root ────────────────────────────────────────────────
+# Solo revocamos al final si el permiso lo hemos dado nosotros: si ya estaba,
+# quitarlo podría dejar sin display a otra app root en curso.
+if xhost >/dev/null 2>&1 && ! xhost | grep -qi 'SI:localuser:root$'; then
+    xhost +SI:localuser:root >/dev/null
+    granted=yes
+fi
+
+pkexec "$@"
+status=$?
+
+# 127 = pkexec no pudo obtener autorización (típico si no hay agente escuchando).
+# 126 es cancelación del usuario, que no merece aviso.
+if [ "$status" -eq 127 ]; then
+    warn "no se pudo obtener autorización para: $1"
+fi
+
+exit $status

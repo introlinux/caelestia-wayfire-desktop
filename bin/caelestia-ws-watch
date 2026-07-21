@@ -8,7 +8,29 @@ workspace, whatever the cause (binding, vswitch, view activation...).
 
 Used by services/Hypr.qml to keep the Caelestia workspace indicator in sync.
 """
-import sys, os, socket, json, struct, glob
+import sys, os, socket, json, struct, glob, ctypes, select, signal, stat
+
+PR_SET_PDEATHSIG = 1
+
+
+def die_with_parent():
+    """Pedir al kernel una señal cuando muera el padre (Quickshell).
+
+    Sin esto el proceso se queda bloqueado en recv() sobre el socket de Wayfire
+    y sobrevive a cada reinicio del shell: el socket solo se cierra al terminar
+    la sesión, así que los watchers viejos se acumulan indefinidamente.
+    """
+    try:
+        ctypes.CDLL('libc.so.6').prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
+    except OSError:
+        pass  # sin prctl nos queda el EOF de stdin como red de seguridad
+
+
+def emit(n):
+    try:
+        print(n, flush=True)
+    except (BrokenPipeError, ValueError):
+        sys.exit(0)
 
 
 def recv_msg(s):
@@ -38,6 +60,8 @@ def ws_index(x, y, grid_w):
 
 
 def main():
+    die_with_parent()
+
     sock_path = os.environ.get('WAYFIRE_SOCKET', '')
     if not sock_path:
         uid = os.getuid()
@@ -56,13 +80,28 @@ def main():
     if isinstance(outputs, list) and outputs:
         ws = outputs[0].get('workspace', {})
         grid_w = ws.get('grid_width', 4) or 4
-        print(ws_index(ws.get('x', 0), ws.get('y', 0), grid_w), flush=True)
+        emit(ws_index(ws.get('x', 0), ws.get('y', 0), grid_w))
 
     send_msg(s, {'method': 'window-rules/events/watch',
                  'data': {'events': ['wset-workspace-changed']}})
     recv_msg(s)  # respuesta {"result": "ok"} de la suscripción
 
+    # Vigilamos también stdin: Quickshell cierra el pipe al morir, y ese EOF
+    # llega aunque Wayfire no tenga nada que decirnos. Solo si es un pipe: un
+    # stdin en /dev/null da EOF al instante y nos haría salir nada más arrancar.
+    try:
+        watch_stdin = stat.S_ISFIFO(os.fstat(0).st_mode)
+    except OSError:
+        watch_stdin = False
+
     while True:
+        ready, _, _ = select.select([s] + ([sys.stdin] if watch_stdin else []), [], [])
+
+        if watch_stdin and sys.stdin in ready and not os.read(0, 4096):
+            sys.exit(0)  # nadie escucha ya al otro lado
+        if s not in ready:
+            continue
+
         msg = recv_msg(s)
         if msg is None:
             sys.exit(0)  # wayfire cerró el socket; QML nos reiniciará
@@ -71,7 +110,7 @@ def main():
         new = msg.get('new-workspace', {})
         wsd = msg.get('wset-data') or {}
         g = (wsd.get('workspace') or {}).get('grid_width', grid_w) or grid_w
-        print(ws_index(new.get('x', 0), new.get('y', 0), g), flush=True)
+        emit(ws_index(new.get('x', 0), new.get('y', 0), g))
 
 
 if __name__ == '__main__':
