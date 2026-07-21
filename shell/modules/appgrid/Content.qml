@@ -19,6 +19,15 @@ Item {
     readonly property int minCellWidth: 150
     readonly property int cellHeight: 150
 
+    // Oscurecimiento extra para que los iconos resalten sobre el escritorio
+    // (el blur con ScreencopyView crashea quickshell y con grim aparecía
+    // después que los iconos — descartado, ver notas)
+    StyledRect {
+        anchors.fill: parent
+        color: Colours.palette.m3scrim
+        opacity: 0.4
+    }
+
     // Clic en hueco vacío cierra la grid, igual que en GNOME/Ubuntu Activities
     MouseArea {
         anchors.fill: parent
@@ -54,11 +63,14 @@ Item {
 
             anchors.left: searchIcon.right
             anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
             anchors.leftMargin: Tokens.spacing.small
             anchors.rightMargin: Tokens.padding.large
 
             topPadding: Tokens.padding.larger
             bottomPadding: Tokens.padding.larger
+
+            font.pointSize: Tokens.font.size.larger
 
             placeholderText: "Buscar aplicaciones…"
 

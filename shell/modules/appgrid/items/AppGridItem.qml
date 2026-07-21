@@ -50,7 +50,8 @@ Item {
         anchors.topMargin: Tokens.spacing.small
 
         text: root.modelData?.name ?? ""
-        font.pointSize: Tokens.font.size.small
+        color: "white"
+        font.pointSize: Tokens.font.size.normal
         horizontalAlignment: Text.AlignHCenter
         elide: Text.ElideRight
         width: Math.min(implicitWidth, root.width - root.itemMargin * 2)
