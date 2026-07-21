@@ -28,12 +28,6 @@ Item {
         opacity: 0.4
     }
 
-    // Clic en hueco vacío cierra la grid, igual que en GNOME/Ubuntu Activities
-    MouseArea {
-        anchors.fill: parent
-        onClicked: root.visibilities.appgrid = false
-    }
-
     StyledRect {
         id: searchWrapper
 
@@ -145,7 +139,52 @@ Item {
         }
 
         StyledScrollBar.vertical: StyledScrollBar {
+            id: gridScroll
+
             flickable: grid
         }
+    }
+
+    // Clic fuera de los iconos y de la búsqueda cierra la grid, igual que en
+    // GNOME/Ubuntu Activities. Va por encima de todo porque el GridView es un
+    // Flickable y se tragaba los clics en los huecos entre celdas; cuando el
+    // punto sí cae sobre algo pulsable dejamos pasar el evento (accepted =
+    // false) para no robarle el clic al delegado ni a la caja de búsqueda.
+    MouseArea {
+        id: dismissArea
+
+        anchors.fill: parent
+
+        function inItem(item: Item, x: real, y: real): bool {
+            if (!item || item.width <= 0 || item.height <= 0)
+                return false;
+            const p = mapToItem(item, x, y);
+            return p.x >= 0 && p.y >= 0 && p.x < item.width && p.y < item.height;
+        }
+
+        function isClickable(x: real, y: real): bool {
+            if (inItem(searchWrapper, x, y) || inItem(gridScroll, x, y))
+                return true;
+
+            if (!inItem(grid, x, y))
+                return false;
+
+            // Coordenadas dentro del contenido del GridView, no del viewport
+            const p = mapToItem(grid, x, y);
+            const cx = p.x + grid.contentX;
+            const cy = p.y + grid.contentY;
+            const item = grid.itemAt(cx, cy);
+            if (!item)
+                return false;
+
+            // Solo cuenta el área de la StateLayer, no el margen de la celda
+            const m = item.itemMargin;
+            const lx = cx - item.x;
+            const ly = cy - item.y;
+            return lx >= m && ly >= m && lx < item.width - m && ly < item.height - m;
+        }
+
+        onPressed: event => event.accepted = !isClickable(event.x, event.y)
+        onClicked: root.visibilities.appgrid = false
     }
 }

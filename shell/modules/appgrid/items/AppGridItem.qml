@@ -26,6 +26,12 @@ Item {
         anchors.margins: root.itemMargin
         radius: Tokens.rounding.normal
 
+        // El m3onSurface por defecto al 8% queda invisible sobre el escritorio
+        // oscurecido con m3scrim; aquí el fondo es arbitrario, así que blanco
+        // con más peso (igual que el nombre de la app, también blanco fijo)
+        color: "white"
+        stateOpacity: pressed ? 0.26 : containsMouse ? 0.16 : 0
+
         onClicked: {
             Apps.launch(root.modelData);
             root.visibilities.appgrid = false;
