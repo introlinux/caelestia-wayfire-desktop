@@ -284,7 +284,13 @@ sospechar de eso antes que del plugin.
    `README.md`, este `NOTES.md`; el `build/` se autoexcluye con el `.gitignore`
    que genera meson), junto con los cambios ya pendientes en `install.sh` y
    `config/wayfire.ini`.
-4. Pendiente para el PR a `wayfire-plugins-extra`:
+4. **APLAZADO por decisión del usuario (2026-07-23): el upstreaming no se
+   arranca hasta que esté terminado todo el port de Caelestia, y entonces se
+   manda junto con el plugin `shift-switcher`** (ver
+   `../CARD-RAISE_TO_plugins-extra.md`), no por separado. Lo de abajo queda
+   como lista de preparación para ese momento, no como trabajo pendiente ahora.
+
+   Pendiente para el PR a `wayfire-plugins-extra`:
    - `sudo apt install uncrustify` y pasarlo con el `uncrustify.ini` de Wayfire
      (`git ls-files | grep "hpp$\|cpp$" | xargs uncrustify -c uncrustify.ini --no-backup`).
    - Rebasar sobre `master` (ojo: master ya tiene `fisheye.cpp`, nuestra copia
