@@ -1,0 +1,193 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="showpointer">
+		<_short>Show Pointer</_short>
+		<_long>Draws attention to the mouse pointer with converging rings, a spotlight, a glowing halo and click ripples. Useful for presentations, screencasts and for finding a lost cursor.</_long>
+		<category>Effects</category>
+
+		<group>
+			<_short>Bindings</_short>
+			<option name="attention" type="activator">
+				<_short>Attention burst</_short>
+				<_long>Sends a burst of rings converging on the pointer.</_long>
+				<default>&lt;super&gt; KEY_P</default>
+			</option>
+			<option name="toggle_halo" type="activator">
+				<_short>Toggle halo</_short>
+				<_long>Turns the persistent glow around the pointer on and off.</_long>
+				<default></default>
+			</option>
+			<option name="toggle_spotlight" type="activator">
+				<_short>Toggle spotlight</_short>
+				<_long>Dims everything except a circle around the pointer, until pressed again.</_long>
+				<default></default>
+			</option>
+		</group>
+
+		<group>
+			<_short>Attention burst</_short>
+			<option name="ring_color" type="color">
+				<_short>Ring color</_short>
+				<_long>Color of the converging rings.</_long>
+				<default>1.0 0.85 0.2 0.9</default>
+			</option>
+			<option name="ring_radius" type="int">
+				<_short>Ring radius</_short>
+				<_long>Radius the rings start from, in pixels. They shrink from here down to the pointer.</_long>
+				<default>220</default>
+				<min>20</min>
+				<max>2000</max>
+			</option>
+			<option name="ring_width" type="int">
+				<_short>Ring width</_short>
+				<_long>Stroke width of a ring at its starting radius, in pixels, including the dark outline on both sides. Rings get thinner as they shrink.</_long>
+				<default>24</default>
+				<min>1</min>
+				<max>200</max>
+			</option>
+			<option name="ring_count" type="int">
+				<_short>Ring count</_short>
+				<_long>How many rings are sent per burst. They are staggered in time so they arrive one after another.</_long>
+				<default>3</default>
+				<min>1</min>
+				<max>6</max>
+			</option>
+			<option name="burst_duration" type="animation">
+				<_short>Burst duration</_short>
+				<_long>How long a full burst lasts.</_long>
+				<default>900ms circle</default>
+			</option>
+		</group>
+
+		<group>
+			<_short>Shake to find</_short>
+			<option name="shake_enabled" type="bool">
+				<_short>Shake the pointer to trigger a burst</_short>
+				<_long>Sends an attention burst when the pointer is shaken quickly from side to side. Disabled by default because fast normal movement can occasionally look like a shake.</_long>
+				<default>false</default>
+			</option>
+			<option name="shake_reversals" type="int">
+				<_short>Direction changes needed</_short>
+				<_long>How many horizontal direction changes must happen within the time window to count as a shake.</_long>
+				<default>4</default>
+				<min>2</min>
+				<max>12</max>
+			</option>
+			<option name="shake_distance" type="int">
+				<_short>Minimum travel</_short>
+				<_long>How far the pointer must travel in one direction, in pixels, for a direction change to count.</_long>
+				<default>60</default>
+				<min>5</min>
+				<max>1000</max>
+			</option>
+			<option name="shake_timeout" type="int">
+				<_short>Time window</_short>
+				<_long>The direction changes must all happen within this many milliseconds.</_long>
+				<default>800</default>
+				<min>100</min>
+				<max>5000</max>
+			</option>
+		</group>
+
+		<group>
+			<_short>Halo</_short>
+			<option name="halo_color" type="color">
+				<_short>Halo color</_short>
+				<_long>Color of the glow around the pointer.</_long>
+				<default>1.0 0.85 0.2 0.55</default>
+			</option>
+			<option name="halo_radius" type="int">
+				<_short>Halo radius</_short>
+				<_long>Radius of the glow, in pixels.</_long>
+				<default>60</default>
+				<min>5</min>
+				<max>500</max>
+			</option>
+			<option name="halo_pulse" type="double">
+				<_short>Pulse amount</_short>
+				<_long>How much the halo grows and shrinks while it is on, as a fraction of its radius. 0 gives a steady glow.</_long>
+				<default>0.15</default>
+				<min>0.0</min>
+				<max>1.0</max>
+			</option>
+			<option name="halo_pulse_period" type="int">
+				<_short>Pulse period</_short>
+				<_long>Duration of one full pulse cycle, in milliseconds.</_long>
+				<default>1600</default>
+				<min>100</min>
+				<max>10000</max>
+			</option>
+			<option name="toggle_duration" type="animation">
+				<_short>Fade duration</_short>
+				<_long>How long the halo and the spotlight take to fade in and out.</_long>
+				<default>300ms circle</default>
+			</option>
+		</group>
+
+		<group>
+			<_short>Spotlight</_short>
+			<option name="spotlight_color" type="color">
+				<_short>Dim color</_short>
+				<_long>Color and strength of the dimming applied outside the spotlight.</_long>
+				<default>0.0 0.0 0.0 0.7</default>
+			</option>
+			<option name="spotlight_radius" type="int">
+				<_short>Spotlight radius</_short>
+				<_long>Radius of the fully undimmed circle around the pointer, in pixels.</_long>
+				<default>160</default>
+				<min>20</min>
+				<max>2000</max>
+			</option>
+			<option name="spotlight_feather" type="int">
+				<_short>Edge softness</_short>
+				<_long>Width of the soft transition between the spotlight and the dimmed area, in pixels.</_long>
+				<default>90</default>
+				<min>1</min>
+				<max>1000</max>
+			</option>
+		</group>
+
+		<group>
+			<_short>Click ripples</_short>
+			<option name="ripple_enabled" type="bool">
+				<_short>Show a ripple on every click</_short>
+				<_long>Expands a ring from the pointer whenever a mouse button is pressed.</_long>
+				<default>false</default>
+			</option>
+			<option name="ripple_radius" type="int">
+				<_short>Ripple radius</_short>
+				<_long>Radius the ripple expands to before disappearing, in pixels.</_long>
+				<default>70</default>
+				<min>10</min>
+				<max>1000</max>
+			</option>
+			<option name="ripple_width" type="int">
+				<_short>Ripple width</_short>
+				<_long>Stroke width of the ripple at its full radius, in pixels.</_long>
+				<default>8</default>
+				<min>1</min>
+				<max>100</max>
+			</option>
+			<option name="ripple_color_left" type="color">
+				<_short>Left button color</_short>
+				<_long>Ripple color for the left mouse button.</_long>
+				<default>1.0 1.0 1.0 0.9</default>
+			</option>
+			<option name="ripple_color_right" type="color">
+				<_short>Right button color</_short>
+				<_long>Ripple color for the right mouse button.</_long>
+				<default>1.0 0.55 0.2 0.9</default>
+			</option>
+			<option name="ripple_color_middle" type="color">
+				<_short>Middle button color</_short>
+				<_long>Ripple color for the middle mouse button and any other button.</_long>
+				<default>0.3 0.75 1.0 0.9</default>
+			</option>
+			<option name="ripple_duration" type="animation">
+				<_short>Ripple duration</_short>
+				<_long>How long a single ripple takes to expand and fade out.</_long>
+				<default>450ms circle</default>
+			</option>
+		</group>
+	</plugin>
+</wayfire>

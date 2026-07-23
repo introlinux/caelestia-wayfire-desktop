@@ -155,6 +155,15 @@ if [ "$SKIP_BUILDS" -eq 0 ]; then
     ninja -C "$BUILD_DIR/wayfire-shift-switcher"
     sudo ninja -C "$BUILD_DIR/wayfire-shift-switcher" install
 
+    # --- showpointer (efectos de atención sobre el puntero, in-repo) ----------
+    log "Compilando wayfire-showpointer"
+    rm -rf "$BUILD_DIR/wayfire-showpointer"
+    PKG_CONFIG_PATH=/usr/local/lib/x86_64-linux-gnu/pkgconfig meson setup \
+        "$BUILD_DIR/wayfire-showpointer" "$REPO/wayfire-showpointer" \
+        --prefix=/usr/local --buildtype=release
+    ninja -C "$BUILD_DIR/wayfire-showpointer"
+    sudo ninja -C "$BUILD_DIR/wayfire-showpointer" install
+
     # --- WCM (Wayfire Config Manager) contra el wayfire de /usr/local ---------
     # El wcm de Ubuntu lleva compilada la ruta /usr/share/wayfire/metadata, así
     # que no ve los plugins del stack de /usr/local (shift-switcher, view-shot…).
