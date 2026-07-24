@@ -50,9 +50,21 @@
 				<min>0.1</min>
 				<max>4.0</max>
 			</option>
+			<option name="trajectory" type="string">
+				<_short>Trajectory</_short>
+				<_long>How the pieces fly off. "radial" shoots them straight out from the cut, accelerating. "ballistic" throws them out with an upward kick and lets gravity take over, so they rise, slow down and fall along a parabola like a real object.</_long>
+				<default>radial</default>
+			</option>
+			<option name="lift" type="double">
+				<_short>Lift</_short>
+				<_long>Ballistic trajectory only: how high the pieces are tossed before falling, as a fraction of the screen height (1.0 is about 15%). 0 throws them straight down with no hop.</_long>
+				<default>1.0</default>
+				<min>0.0</min>
+				<max>3.0</max>
+			</option>
 			<option name="gravity" type="double">
 				<_short>Gravity</_short>
-				<_long>How hard the pieces are pulled downward as they fly off. 0 keeps them level; higher values make them drop faster.</_long>
+				<_long>How hard the pieces are pulled downward as they fly off. With the ballistic trajectory it scales how far past the bottom edge they land, so higher values feel heavier and fall faster.</_long>
 				<default>1.0</default>
 				<min>0.0</min>
 				<max>4.0</max>

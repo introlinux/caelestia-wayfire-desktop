@@ -258,6 +258,8 @@ class ninjaslash_transformer : public wf::scene::view_2d_transformer_t
     wf::option_wrapper_t<double> opt_gravity{"ninjaslash/gravity"};
     wf::option_wrapper_t<bool> opt_fade{"ninjaslash/fade"};
     wf::option_wrapper_t<double> opt_curve{"ninjaslash/curve"};
+    wf::option_wrapper_t<std::string> opt_trajectory{"ninjaslash/trajectory"};
+    wf::option_wrapper_t<double> opt_lift{"ninjaslash/lift"};
     wf::option_wrapper_t<bool> opt_blade_enabled{"ninjaslash/blade_enabled"};
     wf::option_wrapper_t<wf::color_t> opt_blade_color{"ninjaslash/blade_color"};
     wf::option_wrapper_t<double> opt_blade_width{"ninjaslash/blade_width"};
@@ -348,7 +350,9 @@ class ninjaslash_transformer : public wf::scene::view_2d_transformer_t
             auto og = self->output->get_relative_geometry();
             float spread  = (float)self->opt_spread;
             float gravity = (float)self->opt_gravity;
+            float lift    = std::max(0.0f, (float)self->opt_lift);
             float grav_full = gravity * 0.9f * og.height;
+            bool ballistic = ((std::string)self->opt_trajectory == "ballistic");
             const float spin_max = 0.5f;
             const float stroke_dur = 0.18f;                  // local blade sweep length
             const float BIG = 1.0e6f;
@@ -457,26 +461,53 @@ class ninjaslash_transformer : public wf::scene::view_2d_transformer_t
                         std::clamp((p - pc.release) / (1.0f - pc.release), 0.0f, 1.0f) : 0.0f;
                     float tpe = tp * tp;                     // accelerate outwards
 
-                    // total end displacement (separation + gravity)
-                    glm::vec2 Dend = pc.disp + glm::vec2(0.0f, grav_full);
-                    if (!self->opt_fade)
+                    glm::vec2 fly;
+                    float spin;
+                    if (ballistic)
                     {
-                        // no fade: make sure every piece clears the screen fully
-                        // before the end, so it vanishes off-border, not on-screen.
-                        float need = std::sqrt((float)og.width * og.width +
-                                (float)og.height * og.height) + std::sqrt(W * W + H * H);
-                        float dlen = std::sqrt(Dend.x * Dend.x + Dend.y * Dend.y);
-                        if (dlen <= 1.0e-3f)
-                        {
-                            Dend = glm::vec2(0.0f, need); // stationary piece: drop it out
-                        } else if (dlen < need)
-                        {
-                            Dend *= (need / dlen);
-                        }
-                    }
+                        // Real projectile: the piece is thrown outwards with an
+                        // upward kick and then only gravity acts on it, so it
+                        // rises, slows, and falls along a parabola.
+                        //
+                        // Solve for the launch speed v0 and gravity g that give
+                        // exactly the wanted apex height and still carry the piece
+                        // past the bottom edge by t = 1:
+                        //   apex = v0^2 / 2g   and   y(1) = -v0 + g/2 = Yend
+                        // which reduces to  sqrt(g) = sqrt(2*apex) + sqrt(2*apex + 2*Yend).
+                        float apex = lift * 0.15f * og.height;
+                        float Yend = (og.height + H + std::fabs(pc.disp.y) + 8.0f) *
+                            std::max(1.0f, gravity);
+                        float s2h  = std::sqrt(2.0f * apex);
+                        float u    = s2h + std::sqrt(2.0f * apex + 2.0f * Yend);
+                        float gg   = u * u;
+                        float v0   = std::sqrt(2.0f * gg * apex);
 
-                    glm::vec2 fly = Dend * tpe;
-                    float spin  = pc.spin_sign * spin_max * tpe;
+                        fly    = pc.disp * tp;   // outward drift at constant speed
+                        fly.y += -v0 * tp + 0.5f * gg * tp * tp;
+                        spin   = pc.spin_sign * spin_max * 1.5f * tp; // steady tumble
+                    } else
+                    {
+                        // total end displacement (separation + gravity)
+                        glm::vec2 Dend = pc.disp + glm::vec2(0.0f, grav_full);
+                        if (!self->opt_fade)
+                        {
+                            // no fade: make sure every piece clears the screen fully
+                            // before the end, so it vanishes off-border, not on-screen.
+                            float need = std::sqrt((float)og.width * og.width +
+                                    (float)og.height * og.height) + std::sqrt(W * W + H * H);
+                            float dlen = std::sqrt(Dend.x * Dend.x + Dend.y * Dend.y);
+                            if (dlen <= 1.0e-3f)
+                            {
+                                Dend = glm::vec2(0.0f, need); // stationary: drop it out
+                            } else if (dlen < need)
+                            {
+                                Dend *= (need / dlen);
+                            }
+                        }
+
+                        fly  = Dend * tpe;
+                        spin = pc.spin_sign * spin_max * tpe;
+                    }
                     float alpha = self->opt_fade ? (1.0f - smoothstep01(0.65f, 1.0f, tp)) : 1.0f;
                     float edge  = smoothstep01(0.0f, 0.12f, tp) * (1.0f - smoothstep01(0.6f, 1.0f, tp));
 

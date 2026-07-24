@@ -19,12 +19,12 @@ perpendiculares al corte, giran, caen y salen de pantalla. Con sonido por tajo.
   `transformer_render_instance_t`, `custom_gles_subpass`, `pre_hook` en
   `OUTPUT_EFFECT_PRE` que daña el output entero, z-order `TRANSFORMER_HIGHLEVEL + 1`,
   y la clase `animation_base_t` con init/step/reverse.
-- **Snapshot propio (importante, ver §8):** en el ctor del transformer hacemos
+- **Snapshot propio (importante, ver §9):** en el ctor del transformer hacemos
   `view->take_snapshot(win_snapshot)` UNA vez y todos los frames se dibujan desde
   esa textura fija (`wf::auxilliary_buffer_t`), NO desde `get_texture(1.0)`. El core
   mantiene viva la vista durante el unmap (`animation_hook` +
   `unmapped_view_snapshot_node`), pero recomponer los hijos cada frame daba un flip
-  (§8). El box se guarda también en el ctor (`snap_box`) para no depender de que los
+  (§9). El box se guarda también en el ctor (`snap_box`) para no depender de que los
   hijos sigan vivos.
 - Requiere GLES2 (`is_gles2()` guard en `init()`).
 
@@ -103,7 +103,22 @@ perpendiculares al corte, giran, caen y salen de pantalla. Con sonido por tajo.
   (ruta estable a la que apunta el default). **No** referenciar
   `~/.caelestia/caelestia-wayfire/assets/`: esa carpeta la borra el rsync del shell.
 
-## 6. Salida de pantalla (`fade`)
+## 6. Trayectorias (`trajectory`)
+
+- `radial` (default): el desplazamiento total `disp + (0, grav_full)` escalado por
+  `t²`. Todo acelera hacia fuera; no es físico pero es el look original.
+- `ballistic`: tiro real. `pos = v0·t + ½·g·t²`, con deriva lateral a velocidad
+  constante (`disp·t`) y una componente vertical con impulso hacia arriba. El giro
+  pasa a ser lineal en `t` (volteo constante), no `t²`.
+  - `v0` y `g` **se despejan** para cumplir dos condiciones a la vez: que el ápice
+    quede a la altura pedida por `lift` y que en `t=1` el trozo haya pasado el borde
+    inferior. De `apex = v0²/2g` y `y(1) = -v0 + g/2 = Yend` sale
+    `sqrt(g) = sqrt(2·apex) + sqrt(2·apex + 2·Yend)`. Así la salida de pantalla está
+    garantizada por construcción y NO hace falta el escalado del §7.
+  - `gravity` multiplica `Yend` con un `max(1.0, gravity)`: solo puede hacer que
+    caigan MÁS lejos, nunca menos, para no romper esa garantía.
+
+## 7. Salida de pantalla (`fade`, solo trayectoria radial)
 
 Sin `fade` los pedazos se eliminan en `tp=1` **estén donde estén**, así que los de
 poco desplazamiento (la tira central de un número impar de cortes, `frac≈0`) hacían
@@ -112,7 +127,7 @@ poco desplazamiento (la tira central de un número impar de cortes, `frac≈0`) 
 (solo si se queda corto; un trozo parado se manda hacia abajo), garantizando que
 TODOS cruzan del todo el borde antes de terminar. Con `fade` activo no se toca.
 
-## 7. Trampas de Wayfire respetadas
+## 8. Trampas de Wayfire respetadas
 
 - **Iterar cuesta un cierre de sesión**: los `.so` se cargan con `RTLD_GLOBAL` → la
   recarga en vivo reusa el código viejo; y los XML solo se escanean al arrancar
@@ -122,7 +137,7 @@ TODOS cruzan del todo el borde antes de terminar. Con `fade` activo no se toca.
   `step()`; en `render()` y en el `pre_hook` se usa `progress()`.
 - `LOGI` no llega al journal en sesión GDM → usar `LOGE` o fichero para depurar.
 
-## 8. Flip vertical antes del corte (RESUELTO, no reintroducir)
+## 9. Flip vertical antes del corte (RESUELTO, no reintroducir)
 
 Síntoma: la ventana intacta aparecía **volteada verticalmente** durante los primeros
 frames (antes del corte) y se enderezaba al trocearse. Causa: usábamos
@@ -152,7 +167,7 @@ vértices (`{0,0,1,0,1,1,0,1}`), porque esa misma `uv` alimenta `cut_dist()`, qu
 deriva de ella la geometría del corte; voltearla ahí espejaría los tajos y los arcos
 respecto a la estela, que se dibuja en coordenadas lógicas de pantalla.
 
-## 9. Validación offline (opcional, ahorra logouts)
+## 10. Validación offline (opcional, ahorra logouts)
 
 Metodología de showpointer §6: replicar en un `.c` con cairo la cinemática y el
 perfil de brillo de la estela y volcar un PNG con varios instantes sobre fondo claro

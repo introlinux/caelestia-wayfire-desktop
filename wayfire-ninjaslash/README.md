@@ -51,7 +51,9 @@ installing.
 | `angle` | `30` | Fixed cut angle in degrees (used when `random_angle` is off). With `cross`, `45` gives an X and `0` a plus. |
 | `curve` | `0.35` | How much the cuts bow, like a real sword stroke. `0` = dead straight; parallel cuts become concentric arcs and the trail follows the same curve. |
 | `spread` | `1.0` | How far the pieces fly apart perpendicular to the cut. |
-| `gravity` | `1.0` | Downward pull on the flying pieces. |
+| `trajectory` | `radial` | `radial` shoots the pieces straight out from the cut; `ballistic` tosses them up and lets gravity pull them down along a parabola. |
+| `lift` | `1.0` | Ballistic only: apex height of the toss, as a fraction of the screen (`1.0` ≈ 15%). |
+| `gravity` | `1.0` | Downward pull. With `ballistic` it scales how far past the bottom edge the pieces land. |
 | `fade` | `true` | Fade the pieces out near the end. When off, they stay opaque and are guaranteed to fly fully past the screen edge instead. |
 | `blade_enabled` | `true` | Draw the glowing sword trail. |
 | `blade_color` | `0.8 1.0 1.0 1.0` | Blade color; alpha scales brightness. |
