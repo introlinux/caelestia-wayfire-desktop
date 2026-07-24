@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""Tell the intro plugin that the session is ready: open the curtain.
+
+Sends the `intro/reveal` IPC method to Wayfire. Fired by the shell
+(Wallpaper.qml) as soon as the wallpaper is actually visible on screen; the
+plugin ignores repeated calls, so it is safe to call once per monitor. If the
+plugin is not loaded the call just returns an error, and if the socket is
+missing we exit silently - the plugin's own timeout is the safety net.
+"""
+import glob
+import json
+import os
+import socket
+import struct
+import sys
+
+
+def find_socket():
+    path = os.environ.get("WAYFIRE_SOCKET")
+    if path and os.path.exists(path):
+        return path
+    runtime = os.environ.get("XDG_RUNTIME_DIR", "/run/user/%d" % os.getuid())
+    candidates = sorted(glob.glob(os.path.join(runtime, "wayfire*.socket")))
+    return candidates[-1] if candidates else None
+
+
+def main():
+    path = find_socket()
+    if not path:
+        return 0
+
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(2.0)
+        s.connect(path)
+        msg = json.dumps({"method": "intro/reveal", "data": {}}).encode()
+        s.sendall(struct.pack("<I", len(msg)) + msg)
+        # Read the response so the write is known to have been processed.
+        hdr = b""
+        while len(hdr) < 4:
+            chunk = s.recv(4 - len(hdr))
+            if not chunk:
+                return 0
+            hdr += chunk
+        s.recv(struct.unpack("<I", hdr)[0])
+    except OSError:
+        return 0
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

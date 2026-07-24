@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import Quickshell
 import Caelestia.Config
 import qs.components
 import qs.components.filedialog
@@ -14,6 +15,23 @@ Item {
     property string source: Wallpapers.current
     property Image current: one
     property bool completed
+    property bool revealSent: false
+
+    // Session-start reveal (wayfire-intro): the compositor keeps the screen
+    // behind a black curtain until the desktop is actually worth showing.
+    // The moment the wallpaper is on screen is that moment. The plugin
+    // ignores repeated calls, so one call per monitor is fine.
+    function sendReveal(): void {
+        if (revealSent)
+            return;
+        revealSent = true;
+        Quickshell.execDetached(["caelestia-intro-reveal"]);
+    }
+
+    onCurrentChanged: {
+        if (current)
+            sendReveal();
+    }
 
     onSourceChanged: {
         if (!source)
@@ -40,6 +58,10 @@ Item {
 
         sourceComponent: StyledRect {
             color: Colours.palette.m3surfaceContainer
+
+            // No wallpaper configured: the "set one now" screen is what the
+            // session opens onto, so reveal on it too.
+            Component.onCompleted: root.sendReveal()
 
             Row {
                 anchors.centerIn: parent

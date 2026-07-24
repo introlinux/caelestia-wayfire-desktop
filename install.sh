@@ -173,6 +173,15 @@ if [ "$SKIP_BUILDS" -eq 0 ]; then
     ninja -C "$BUILD_DIR/wayfire-ninjaslash"
     sudo ninja -C "$BUILD_DIR/wayfire-ninjaslash" install
 
+    # --- intro (telon negro + apertura cinematica al iniciar sesion, in-repo) -
+    log "Compilando wayfire-intro"
+    rm -rf "$BUILD_DIR/wayfire-intro"
+    PKG_CONFIG_PATH=/usr/local/lib/x86_64-linux-gnu/pkgconfig meson setup \
+        "$BUILD_DIR/wayfire-intro" "$REPO/wayfire-intro" \
+        --prefix=/usr/local --buildtype=release
+    ninja -C "$BUILD_DIR/wayfire-intro"
+    sudo ninja -C "$BUILD_DIR/wayfire-intro" install
+
     # --- WCM (Wayfire Config Manager) contra el wayfire de /usr/local ---------
     # El wcm de Ubuntu lleva compilada la ruta /usr/share/wayfire/metadata, así
     # que no ve los plugins del stack de /usr/local (shift-switcher, view-shot…).

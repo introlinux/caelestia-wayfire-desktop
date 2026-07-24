@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="intro">
+		<_short>Intro</_short>
+		<_long>Cinematic session-start reveal: the screen starts fully covered by a black curtain and opens onto the desktop, either as a horizontal split or as a growing iris circle. The reveal is triggered via the IPC method intro/reveal (normally by the shell once the wallpaper is visible), with a timeout as a safety net.</_long>
+		<category>Effects</category>
+
+		<option name="pattern" type="string">
+			<_short>Reveal pattern</_short>
+			<_long>How the curtain opens: "split" parts it in two horizontal halves sliding off the top and bottom edges; "iris" opens a circle from the center of the screen.</_long>
+			<default>split</default>
+		</option>
+		<option name="duration" type="animation">
+			<_short>Reveal duration</_short>
+			<_long>How long the opening animation takes.</_long>
+			<default>1200ms circle</default>
+		</option>
+		<option name="timeout" type="int">
+			<_short>Reveal timeout</_short>
+			<_long>Open the curtain on our own after this many milliseconds if nothing calls the intro/reveal IPC method, so a broken shell can never leave the session black forever.</_long>
+			<default>10000</default>
+			<min>1000</min>
+			<max>60000</max>
+		</option>
+		<option name="hide_cursor" type="bool">
+			<_short>Hide the cursor during the intro</_short>
+			<_long>Keeps the hardware cursor from floating over the curtain. It reappears as soon as the reveal finishes.</_long>
+			<default>true</default>
+		</option>
+		<option name="color" type="color">
+			<_short>Curtain color</_short>
+			<_long>Color of the curtain. Black matches the transition from the login manager.</_long>
+			<default>0.0 0.0 0.0 1.0</default>
+		</option>
+		<option name="replay" type="activator">
+			<_short>Replay the intro</_short>
+			<_long>Drops the curtain again and re-opens it. Useful for tuning the options live.</_long>
+			<default></default>
+		</option>
+	</plugin>
+</wayfire>
