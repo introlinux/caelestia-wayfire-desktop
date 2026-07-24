@@ -173,6 +173,22 @@ if [ "$SKIP_BUILDS" -eq 0 ]; then
     ninja -C "$BUILD_DIR/wayfire-ninjaslash"
     sudo ninja -C "$BUILD_DIR/wayfire-ninjaslash" install
 
+    # WCM construye el desplegable "Close animation" con los <desc> estaticos
+    # de animate.xml (core), asi que un efecto registrado en runtime no sale
+    # en la lista aunque funcione. Anadimos la entrada de ninjaslash tras cada
+    # (re)instalacion de wayfire, que regenera ese XML. Idempotente.
+    sudo python3 - <<'ANIMPATCH'
+import re
+path = "/usr/local/share/wayfire/metadata/animate.xml"
+text = open(path).read()
+if "ninjaslash" not in text:
+    m = re.search(r'<option name="close_animation".*?(?=\t\t</option>)', text, re.S)
+    desc = ('\t\t\t<desc>\n\t\t\t\t<value>ninjaslash</value>\n'
+            '\t\t\t\t<_name>Ninja Slash</_name>\n\t\t\t</desc>\n')
+    text = text[:m.end()] + desc + text[m.end():]
+    open(path, "w").write(text)
+ANIMPATCH
+
     # --- intro (telon negro + apertura cinematica al iniciar sesion, in-repo) -
     log "Compilando wayfire-intro"
     rm -rf "$BUILD_DIR/wayfire-intro"

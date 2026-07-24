@@ -173,3 +173,19 @@ Metodología de showpointer §6: replicar en un `.c` con cairo la cinemática y 
 perfil de brillo de la estela y volcar un PNG con varios instantes sobre fondo claro
 y oscuro (`gcc x.c $(pkg-config --cflags --libs cairo) -lm`). El descarte GLES no se
 replica, pero sí las curvas y colores.
+
+## 11. WCM y el desplegable "Close animation" (2026-07-25)
+
+WCM construye ese combo con los `<desc>` **estáticos** de `animate.xml` (del
+core), así que un efecto registrado en runtime en el registry de animate no
+aparece en la lista aunque funcione perfectamente escrito a mano en el ini.
+Es una limitación heredada de upstream: shatter/vortex/helix de plugins-extra
+tampoco salen en un sistema estándar.
+
+Arreglo: install.sh parchea `/usr/local/share/wayfire/metadata/animate.xml`
+tras instalar ninjaslash (heredoc python idempotente, guard `"ninjaslash" not
+in text`) añadiendo `<value>ninjaslash</value>` + `<_name>Ninja Slash</_name>`
+al `<desc>` de `close_animation`. Hay que rehacerlo tras cada reinstalación de
+wayfire (regenera el XML) — por eso vive en install.sh y no es un parche de
+una sola vez. WCM lee los metadatos al arrancar: reiniciar WCM tras aplicarlo.
+Wayfire en sí NO valida el valor contra la lista; solo afecta a la UI de WCM.
