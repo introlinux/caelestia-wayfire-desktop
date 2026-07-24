@@ -32,13 +32,17 @@ import socket
 import struct
 import subprocess
 import sys
+import time
 
 OVERRIDES_PATH = os.path.expanduser('~/.config/caelestia/auto-scale-overrides.json')
 LOG_PATH = '/tmp/caelestia-autoscale.log'
 
-# DPI físico (diagonal) por debajo del cual se usa cada escala entera.
+# DPI físico (diagonal) a partir del cual se usa cada escala entera.
+# El corte de 3x va alto a propósito: un panel de portátil HiDPI típico
+# (Surface Book 3: 3000x2000 a 13,5" = 264 dpi) se usa a 2x; 3x solo tiene
+# sentido en densidades de ~4K en 13" (330+ dpi) o superiores.
 SCALE_THRESHOLDS = [
-    (260, 3),
+    (320, 3),
     (150, 2),
     (0, 1),
 ]
@@ -47,7 +51,7 @@ SCALE_THRESHOLDS = [
 def log(msg):
     try:
         with open(LOG_PATH, 'a') as f:
-            f.write(msg + '\n')
+            f.write(time.strftime('%H:%M:%S ') + msg + '\n')
     except OSError:
         pass
 
@@ -121,8 +125,10 @@ def wlr_randr_outputs():
 
 def apply_scale(name, scale, reason):
     log(f"{name}: aplicando escala {scale} ({reason})")
-    subprocess.run(['wlr-randr', '--output', name, '--scale', f'{scale:.6f}'],
-                    capture_output=True, timeout=5)
+    proc = subprocess.run(['wlr-randr', '--output', name, '--scale', f'{scale:.6f}'],
+                          capture_output=True, text=True, timeout=5)
+    if proc.returncode != 0:
+        log(f"{name}: wlr-randr falló (exit {proc.returncode}): {proc.stderr.strip()}")
 
 
 def reconcile():
