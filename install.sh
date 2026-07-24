@@ -164,6 +164,15 @@ if [ "$SKIP_BUILDS" -eq 0 ]; then
     ninja -C "$BUILD_DIR/wayfire-showpointer"
     sudo ninja -C "$BUILD_DIR/wayfire-showpointer" install
 
+    # --- ninjaslash (animación de cierre estilo corte de espada, in-repo) -----
+    log "Compilando wayfire-ninjaslash"
+    rm -rf "$BUILD_DIR/wayfire-ninjaslash"
+    PKG_CONFIG_PATH=/usr/local/lib/x86_64-linux-gnu/pkgconfig meson setup \
+        "$BUILD_DIR/wayfire-ninjaslash" "$REPO/wayfire-ninjaslash" \
+        --prefix=/usr/local --buildtype=release
+    ninja -C "$BUILD_DIR/wayfire-ninjaslash"
+    sudo ninja -C "$BUILD_DIR/wayfire-ninjaslash" install
+
     # --- WCM (Wayfire Config Manager) contra el wayfire de /usr/local ---------
     # El wcm de Ubuntu lleva compilada la ruta /usr/share/wayfire/metadata, así
     # que no ve los plugins del stack de /usr/local (shift-switcher, view-shot…).

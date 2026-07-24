@@ -1,0 +1,109 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="ninjaslash">
+		<_short>Ninja Slash</_short>
+		<_long>Close animation that slices the window in two along a fast sword stroke. A glowing blade sweeps across, then the two halves separate perpendicular to the cut, spin, fall with gravity and fade off the screen edges. Inspired by Fruit Ninja. Register it as a close animation with [animate] close_animation = ninjaslash.</_long>
+		<category>Effects</category>
+
+		<group>
+			<_short>Ninja slash</_short>
+			<option name="duration" type="animation">
+				<_short>Duration</_short>
+				<_long>How long the whole slash lasts, from the blade sweep to the halves leaving the screen.</_long>
+				<default>800ms circle</default>
+			</option>
+			<option name="pattern" type="string">
+				<_short>Slash pattern</_short>
+				<_long>How the window is cut. "random" (default) picks a fresh pattern on every close. "parallel" makes one or more parallel cuts (see Slices) that sweep in order. "cross" makes two perpendicular strokes, cutting the window into four pieces that fly to the corners (looks like an X when the angle is 45).</_long>
+				<default>random</default>
+			</option>
+			<option name="cuts" type="int">
+				<_short>Cuts</_short>
+				<_long>Parallel pattern only: how many sword strokes cut the window, each sweeping in order. 1 is the classic single diagonal slash (two halves); N cuts leave N+1 strips. Ignored when the pattern is "random" or "cross".</_long>
+				<default>1</default>
+				<min>1</min>
+				<max>11</max>
+			</option>
+			<option name="random_angle" type="bool">
+				<_short>Random slash angle</_short>
+				<_long>Pick a fresh diagonal direction for the cut on every window close. Disable to always cut at the fixed angle below.</_long>
+				<default>true</default>
+			</option>
+			<option name="angle" type="double">
+				<_short>Fixed slash angle</_short>
+				<_long>Angle of the cut in degrees, measured from the horizontal. Only used when the random angle is disabled.</_long>
+				<default>30.0</default>
+				<min>-89.0</min>
+				<max>89.0</max>
+			</option>
+			<option name="curve" type="double">
+				<_short>Cut curvature</_short>
+				<_long>How much the cuts bow, like a real sword stroke. 0 gives dead-straight cuts (which read more like a laser than a blade); higher values arc them more. Parallel cuts become concentric arcs and the trail follows the same curve.</_long>
+				<default>0.35</default>
+				<min>0.0</min>
+				<max>1.0</max>
+			</option>
+			<option name="spread" type="double">
+				<_short>Spread</_short>
+				<_long>How far the pieces fly apart perpendicular to the cut. 1.0 sends them roughly a screen-width apart by the end.</_long>
+				<default>1.0</default>
+				<min>0.1</min>
+				<max>4.0</max>
+			</option>
+			<option name="gravity" type="double">
+				<_short>Gravity</_short>
+				<_long>How hard the pieces are pulled downward as they fly off. 0 keeps them level; higher values make them drop faster.</_long>
+				<default>1.0</default>
+				<min>0.0</min>
+				<max>4.0</max>
+			</option>
+			<option name="fade" type="bool">
+				<_short>Fade the pieces out</_short>
+				<_long>Gradually fade the flying pieces to invisible near the end. Disable to keep them fully opaque so they only disappear when they leave the screen (make sure gravity or spread carries them off-screen).</_long>
+				<default>true</default>
+			</option>
+		</group>
+
+		<group>
+			<_short>Blade</_short>
+			<option name="blade_enabled" type="bool">
+				<_short>Show the sword trail</_short>
+				<_long>Draw the glowing blade streak that sweeps across the window just before it splits.</_long>
+				<default>true</default>
+			</option>
+			<option name="blade_color" type="color">
+				<_short>Blade color</_short>
+				<_long>Color of the glowing sword trail. The alpha channel scales its brightness.</_long>
+				<default>0.8 1.0 1.0 1.0</default>
+			</option>
+			<option name="blade_width" type="double">
+				<_short>Blade width</_short>
+				<_long>Thickness of the bright core of the sword trail, in pixels. A softer glow extends beyond it.</_long>
+				<default>6.0</default>
+				<min>1.0</min>
+				<max>60.0</max>
+			</option>
+		</group>
+
+		<group>
+			<_short>Sound</_short>
+			<option name="sound_enabled" type="bool">
+				<_short>Play a sound on every cut</_short>
+				<_long>Play a sword-swish sound as each stroke lands, so multi-cut patterns are heard in sequence.</_long>
+				<default>true</default>
+			</option>
+			<option name="sound_file" type="string">
+				<_short>Sound file</_short>
+				<_long>Path to the audio file played on each cut (played with pw-play). Leave empty to disable.</_long>
+				<default>/usr/local/share/ninjaslash/espada-ninja.mp3</default>
+			</option>
+			<option name="sound_volume" type="int">
+				<_short>Sound volume</_short>
+				<_long>Playback volume in percent.</_long>
+				<default>100</default>
+				<min>0</min>
+				<max>100</max>
+			</option>
+		</group>
+	</plugin>
+</wayfire>
