@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""Autodetecta y aplica la escala de cada output según su DPI físico.
+
+Sustituye la idea de fijar `scale` a mano por conector en wayfire.ini, que
+no es portable: dos máquinas distintas (p.ej. el panel del Surface y el del
+iMac) pueden compartir el mismo nombre de conector (eDP-1), así que una
+sección `[output:eDP-1]` estática aplicaría la escala equivocada según en
+qué equipo arranque el pendrive.
+
+Usa `wlr-randr --json` (protocolo wlr-output-management, estándar en
+cualquier compositor wlroots) para leer tamaño físico + modo nativo de cada
+output, calcula el DPI y elige una escala entera (1/2/3 — nada de
+fraccionario, para no arrastrar apps que no soportan wp-fractional-scale-v1
+y salen borrosas). Si la escala calculada difiere de la actual, la aplica en
+vivo con `wlr-randr --output NAME --scale X` (nunca toca wayfire.ini).
+
+Un fichero opcional `~/.config/caelestia/auto-scale-overrides.json`
+(`{"<make>|<model>|<serial>|<WxH mm>": <escala>}`) permite fijar a mano la
+escala de un panel concreto si el heurístico se equivoca; tiene prioridad
+sobre el cálculo por DPI. La clave identifica el panel por EDID, no por
+conector, así que sigue siendo portable entre máquinas.
+
+Pasada inicial al arrancar + reconciliación en cada `output-added` (docking
+en caliente), vía conexión IPC persistente a ipc-rules (mismo patrón que
+caelestia-ws-watch). Log en /tmp/caelestia-autoscale.log.
+"""
+import glob
+import json
+import math
+import os
+import socket
+import struct
+import subprocess
+import sys
+
+OVERRIDES_PATH = os.path.expanduser('~/.config/caelestia/auto-scale-overrides.json')
+LOG_PATH = '/tmp/caelestia-autoscale.log'
+
+# DPI físico (diagonal) por debajo del cual se usa cada escala entera.
+SCALE_THRESHOLDS = [
+    (260, 3),
+    (150, 2),
+    (0, 1),
+]
+
+
+def log(msg):
+    try:
+        with open(LOG_PATH, 'a') as f:
+            f.write(msg + '\n')
+    except OSError:
+        pass
+
+
+def recv_msg(s):
+    hdr = b''
+    while len(hdr) < 4:
+        chunk = s.recv(4 - len(hdr))
+        if not chunk:
+            return None
+        hdr += chunk
+    n = struct.unpack('<I', hdr)[0]
+    data = b''
+    while len(data) < n:
+        chunk = s.recv(n - len(data))
+        if not chunk:
+            return None
+        data += chunk
+    return json.loads(data)
+
+
+def send_msg(s, payload):
+    msg = json.dumps(payload).encode()
+    s.send(struct.pack('<I', len(msg)) + msg)
+
+
+def identity_key(o):
+    make = (o.get('make') or '').strip()
+    model = (o.get('model') or '').strip()
+    serial = (o.get('serial') or '').strip()
+    ps = o.get('physical_size') or {}
+    return f"{make}|{model}|{serial}|{ps.get('width', 0)}x{ps.get('height', 0)}"
+
+
+def load_overrides():
+    try:
+        with open(OVERRIDES_PATH) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+
+
+def pick_scale(dpi):
+    for threshold, scale in SCALE_THRESHOLDS:
+        if dpi >= threshold:
+            return scale
+    return 1
+
+
+def compute_scale(o, overrides):
+    key = identity_key(o)
+    if key in overrides:
+        return float(overrides[key]), f"override {key!r}"
+
+    ps = o.get('physical_size') or {}
+    w_mm, h_mm = ps.get('width') or 0, ps.get('height') or 0
+    mode = next((m for m in o.get('modes', []) if m.get('current')), None)
+    if not mode or w_mm <= 0 or h_mm <= 0:
+        return 1.0, "sin tamaño físico/modo, fallback 1x"
+
+    diag_px = math.hypot(mode['width'], mode['height'])
+    diag_in = math.hypot(w_mm, h_mm) / 25.4
+    dpi = diag_px / diag_in
+    return float(pick_scale(dpi)), f"{dpi:.0f} dpi"
+
+
+def wlr_randr_outputs():
+    proc = subprocess.run(['wlr-randr', '--json'], capture_output=True, text=True, timeout=5)
+    return json.loads(proc.stdout)
+
+
+def apply_scale(name, scale, reason):
+    log(f"{name}: aplicando escala {scale} ({reason})")
+    subprocess.run(['wlr-randr', '--output', name, '--scale', f'{scale:.6f}'],
+                    capture_output=True, timeout=5)
+
+
+def reconcile():
+    overrides = load_overrides()
+    try:
+        outputs = wlr_randr_outputs()
+    except (subprocess.SubprocessError, json.JSONDecodeError, OSError, ValueError) as e:
+        log(f"wlr-randr --json falló: {e}")
+        return
+
+    for o in outputs:
+        if not o.get('enabled') or not o.get('name'):
+            continue
+        current = o.get('scale') or 1.0
+        target, reason = compute_scale(o, overrides)
+        if abs(current - target) > 0.01:
+            apply_scale(o['name'], target, reason)
+        else:
+            log(f"{o['name']}: ya en {current} ({reason}), sin cambios")
+
+
+def main():
+    reconcile()
+
+    sock_path = os.environ.get('WAYFIRE_SOCKET', '')
+    if not sock_path:
+        sockets = glob.glob(f"/run/user/{os.getuid()}/wayfire*.socket")
+        if not sockets:
+            log("no se encontró el socket de Wayfire, saliendo")
+            return
+        sock_path = sockets[0]
+
+    s = socket.socket(socket.AF_UNIX)
+    s.connect(sock_path)
+    send_msg(s, {'method': 'window-rules/events/watch',
+                 'data': {'events': ['output-added']}})
+    recv_msg(s)  # respuesta {"result": "ok"} de la suscripción
+
+    while True:
+        msg = recv_msg(s)
+        if msg is None:
+            return  # wayfire cerró el socket (fin de sesión)
+        if msg.get('event') == 'output-added':
+            log("output-added, reconciliando")
+            reconcile()
+
+
+if __name__ == '__main__':
+    main()

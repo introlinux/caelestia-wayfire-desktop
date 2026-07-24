@@ -6,6 +6,7 @@ wstroke
 xdg-desktop-portal-wlr
 xdg-desktop-portal-gtk
 wlrctl
+wlr-randr
 xwayland
 wtype
 x11-xserver-utils
