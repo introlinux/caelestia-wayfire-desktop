@@ -122,11 +122,11 @@ StyledRect {
                     }
                 }
                 DelegateChoice {
-                    roleValue: "gameMode"
+                    roleValue: "systemSounds"
                     delegate: Toggle {
-                        icon: "gamepad"
-                        checked: GameMode.enabled
-                        onClicked: GameMode.enabled = !GameMode.enabled
+                        icon: Sounds.enabled ? "volume_up" : "volume_off"
+                        checked: Sounds.enabled
+                        onClicked: GlobalConfig.services.systemSounds = !Sounds.enabled
                     }
                 }
                 DelegateChoice {

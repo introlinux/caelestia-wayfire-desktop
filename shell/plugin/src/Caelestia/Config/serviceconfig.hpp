@@ -34,6 +34,9 @@ class ServiceConfig : public ConfigObject {
         { vmap({ { u"from"_s, u"com.github.th_ch.youtube_music"_s }, { u"to"_s, u"YT Music"_s } }) })
     CONFIG_GLOBAL_PROPERTY(bool, showLyrics, false)
     CONFIG_GLOBAL_PROPERTY(QString, lyricsBackend, u"Auto"_s)
+    // Master switch for UI sound effects: the shell's own (sliding panels,
+    // camera shutter...) and the compositor's (ninjaslash sword swishes).
+    CONFIG_GLOBAL_PROPERTY(bool, systemSounds, true)
 
 public:
     explicit ServiceConfig(QObject* parent = nullptr)

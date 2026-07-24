@@ -23,6 +23,17 @@ COUNTDOWN_SECS = 3
 projector_sound = Path.home() / ".caelestia/caelestia-wayfire/assets/sound-projector.mp3"
 
 
+def system_sounds_enabled() -> bool:
+    """Honour the shell's master switch (Settings > Audio > System sounds)."""
+    try:
+        import json
+        cfg = Path.home() / ".config/caelestia/shell.json"
+        with cfg.open() as f:
+            return bool(json.load(f).get("services", {}).get("systemSounds", True))
+    except Exception:
+        return True
+
+
 def countdown() -> None:
     """Visual 3-2-1 countdown on the shell plus old-projector sound.
 
@@ -32,7 +43,7 @@ def countdown() -> None:
     subprocess.Popen(["qs", "-c", "caelestia", "ipc", "call", "record",
                       "countdown", str(COUNTDOWN_SECS)],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if projector_sound.exists():
+    if projector_sound.exists() and system_sounds_enabled():
         subprocess.Popen(["pw-play", str(projector_sound)],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(COUNTDOWN_SECS + 0.2)

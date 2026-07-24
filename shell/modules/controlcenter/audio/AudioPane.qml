@@ -237,6 +237,24 @@ Item {
                     }
 
                     SectionHeader {
+                        title: qsTr("System sounds")
+                        description: qsTr("Sound effects for the desktop, such as sliding panels and closing windows")
+                    }
+
+                    SectionContainer {
+                        contentSpacing: Tokens.spacing.normal
+
+                        SwitchRow {
+                            Layout.fillWidth: true
+                            label: qsTr("Enable system sounds")
+                            checked: Sounds.enabled
+                            onToggled: checked => {
+                                GlobalConfig.services.systemSounds = checked;
+                            }
+                        }
+                    }
+
+                    SectionHeader {
                         title: qsTr("Output volume")
                         description: qsTr("Control the volume of your output device")
                     }

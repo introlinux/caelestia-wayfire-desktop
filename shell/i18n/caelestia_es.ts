@@ -161,42 +161,57 @@
     </message>
     <message>
         <location filename="../modules/controlcenter/audio/AudioPane.qml" line="240"/>
+        <source>System sounds</source>
+        <translation>Sonidos del sistema</translation>
+    </message>
+    <message>
+        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="241"/>
+        <source>Sound effects for the desktop, such as sliding panels and closing windows</source>
+        <translation>Efectos de sonido del escritorio, como los paneles deslizantes y el cierre de ventanas</translation>
+    </message>
+    <message>
+        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="249"/>
+        <source>Enable system sounds</source>
+        <translation>Activar sonidos del sistema</translation>
+    </message>
+    <message>
+        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="258"/>
         <source>Output volume</source>
         <translation>Volumen de salida</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="241"/>
+        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="259"/>
         <source>Control the volume of your output device</source>
         <translation>Controla el volumen del dispositivo de salida</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="256"/>
-        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="374"/>
+        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="274"/>
+        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="392"/>
         <source>Volume</source>
         <translation>Volumen</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="358"/>
+        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="376"/>
         <source>Input volume</source>
         <translation>Volumen de entrada</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="359"/>
+        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="377"/>
         <source>Control the volume of your input device</source>
         <translation>Controla el volumen del dispositivo de entrada</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="476"/>
+        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="494"/>
         <source>Applications</source>
         <translation>Aplicaciones</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="477"/>
+        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="495"/>
         <source>Control volume for individual applications</source>
         <translation>Controla el volumen de cada aplicación</translation>
     </message>
     <message>
-        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="618"/>
+        <location filename="../modules/controlcenter/audio/AudioPane.qml" line="636"/>
         <source>No applications currently playing audio</source>
         <translation>Ninguna aplicación reproduciendo audio</translation>
     </message>

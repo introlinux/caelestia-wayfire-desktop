@@ -58,7 +58,7 @@ class UtilitiesConfig : public ConfigObject {
             vmap({ { u"id"_s, u"bluetooth"_s }, { u"enabled"_s, true } }),
             vmap({ { u"id"_s, u"mic"_s }, { u"enabled"_s, true } }),
             vmap({ { u"id"_s, u"settings"_s }, { u"enabled"_s, true } }),
-            vmap({ { u"id"_s, u"gameMode"_s }, { u"enabled"_s, true } }),
+            vmap({ { u"id"_s, u"systemSounds"_s }, { u"enabled"_s, true } }),
             vmap({ { u"id"_s, u"dnd"_s }, { u"enabled"_s, true } }),
             vmap({ { u"id"_s, u"vpn"_s }, { u"enabled"_s, false } }),
         })

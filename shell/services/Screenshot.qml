@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import qs.components.containers
+import qs.services
 import qs.utils
 
 Singleton {
@@ -70,7 +71,7 @@ Singleton {
     function feedback(path: string): void {
         flash.activeAsync = true;
         flashOff.restart();
-        Quickshell.execDetached(["pw-play", `${Quickshell.shellDir}/assets/sound-camera.mp3`]);
+        Sounds.play(`${Quickshell.shellDir}/assets/sound-camera.mp3`);
         if (path)
             Quickshell.execDetached(["notify-send", "-a", "caelestia-shell", "-i", path, "Screenshot taken", `Saved in ${Paths.shortenHome(path)}`]);
         else
