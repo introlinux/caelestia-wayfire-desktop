@@ -771,6 +771,46 @@ También añadido en `~/.config/environment.d/50-local-bin.conf` y en
 Con esto VLC, KDE apps y cualquier app Qt siguen automáticamente el tema GTK
 activo (Yaru-wartybrown) — fuente, colores, iconos y diálogos de archivo.
 
+### El CLI de Caelestia no debe temar GTK ni Qt (`cli.json`)
+
+`caelestia/utils/theme.py` aplica el esquema de color a media docena de
+programas y, en `apply_gtk()`, hace tres `dconf write` **con nombres fijos en el
+código**:
+
+```python
+dconf write /org/gnome/desktop/interface/gtk-theme  'adw-gtk3-dark'
+dconf write /org/gnome/desktop/interface/icon-theme 'Papirus-{Light,Dark}'
+dconf write /org/gnome/desktop/interface/color-scheme 'prefer-{mode}'
+```
+
+En este equipo no está instalado ninguno de los dos temas (`adw-gtk3` no está en
+los repos de Ubuntu, y `papirus-icon-theme` se purgó el 2026-07-11 arrastrado por
+la limpieza de la pila LXQt/KDE). Resultado: GTK caía a Adwaita, Nautilus y el
+lanzador perdían los iconos, y los menús y el fondo del terminal cambiaban de
+color. Además `apply_gtk()` **sobrescribe** `~/.config/gtk-{3.0,4.0}/gtk.css`,
+que aquí lleva nuestros ajustes de barra de desplazamiento.
+
+Se dispara al aplicar un esquema, y aplicar un esquema es lo que hace **cambiar
+el fondo de pantalla desde el lanzador** — no hace falta tocar nada de temas
+para provocarlo.
+
+El CLI trae interruptores para esto, en `~/.config/caelestia/cli.json`. Ese
+fichero no se crea solo, y todo lo que no aparezca en él se da por activado, así
+que se versiona en `config/caelestia/cli.json` (install.sh lo despliega):
+
+```json
+{
+    "theme": {
+        "enableGtk": false,
+        "enableQt": false
+    }
+}
+```
+
+Con eso el resto del temado del CLI (btop, cava, fuzzel, secuencias del
+terminal…) sigue funcionando; lo único que deja de tocar es GTK y Qt, que aquí
+los gobiernan `~/.config/gtk-3.0/settings.ini` y `QT_QPA_PLATFORMTHEME=gtk3`.
+
 ### CSD vs SSD — decoraciones de ventana
 
 **Decisión adoptada: CSD** (client-side decorations) siempre que la app las
