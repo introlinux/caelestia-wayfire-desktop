@@ -89,7 +89,12 @@ Item {
     Loader {
         id: wallpaperList
 
-        asynchronous: true
+        // Síncrono a propósito: mientras no exista el PathView, el ancho de esta
+        // lista se queda en el de reserva (`itemWidth * 1.2`) y el panel se abre
+        // estrecho y se ensancha a la vista, animado por el Behavior de abajo.
+        // Con el carrusel montado ya en el primer frame, abre directamente con
+        // su tamaño final.
+        asynchronous: false
         active: false
 
         anchors.top: parent.top

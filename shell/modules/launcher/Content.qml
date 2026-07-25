@@ -80,6 +80,16 @@ Item {
 
             placeholderText: qsTr("Type \"%1\" for commands").arg(GlobalConfig.launcher.actionPrefix)
 
+            // Arranca en el modo que haya pedido quien abrió el launcher (ver
+            // `launcherPrefill` en DrawerVisibilities). Tiene que ser el valor
+            // INICIAL de `text`: la lista de contenido decide si enseña apps o
+            // fondos a partir de este texto en cuanto se construye, así que
+            // asignarlo más tarde abre el panel en modo apps y lo hace
+            // transicionar a fondos a la vista. El binding se rompe nada más
+            // completarse, para que escribir mande y para poder vaciar el
+            // prefill sin borrar lo escrito.
+            text: root.visibilities.launcherPrefill
+
             onAccepted: {
                 const currentItem = list.currentList?.currentItem;
                 if (currentItem) {
@@ -137,13 +147,33 @@ Item {
                 }
             }
 
-            Component.onCompleted: forceActiveFocus()
+            // Para el caso en que este Content ya existía al abrirse el
+            // launcher: si se reabre mientras aún corre la animación de cierre,
+            // el Loader sigue activo y no se construye nada nuevo, así que el
+            // prefill hay que aplicarlo a mano desde onLauncherChanged.
+            function applyPrefill(): void {
+                const prefill = root.visibilities.launcherPrefill;
+                if (!prefill)
+                    return;
+
+                text = prefill;
+                cursorPosition = text.length;
+                root.visibilities.launcherPrefill = "";
+            }
+
+            Component.onCompleted: {
+                text = text; // Rompe el binding conservando el valor
+                root.visibilities.launcherPrefill = "";
+                cursorPosition = text.length;
+                forceActiveFocus();
+            }
 
             Connections {
                 function onLauncherChanged(): void {
                     if (!root.visibilities.launcher) {
                         search.text = "";
                     } else {
+                        search.applyPrefill();
                         search.forceActiveFocus();
                     }
                 }

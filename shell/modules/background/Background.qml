@@ -28,6 +28,27 @@ Variants {
         anchors.left: true
         anchors.right: true
 
+        // Clic derecho en el escritorio: abre el launcher directamente en el
+        // selector de fondos. Nace inmune al cierre por hover, porque
+        // Interactions marca como "abierto por atajo" todo panel que se abre con
+        // el puntero fuera de su zona del borde inferior, que es justo el caso.
+        //
+        // Solo se acepta el botón derecho: el izquierdo sigue propagándose como
+        // hasta ahora.
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.RightButton
+
+            onClicked: {
+                const visibilities = Visibilities.getForScreen(win.modelData);
+                if (!visibilities)
+                    return;
+
+                visibilities.launcherPrefill = `${GlobalConfig.launcher.actionPrefix}wallpaper `;
+                visibilities.launcher = true;
+            }
+        }
+
         Item {
             id: behindClock
 

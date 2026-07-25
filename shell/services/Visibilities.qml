@@ -15,4 +15,8 @@ Singleton {
     function getForActive(): DrawerVisibilities {
         return screens.get(Hypr.focusedMonitor);
     }
+
+    function getForScreen(screen: ShellScreen): DrawerVisibilities {
+        return screens.get(Hypr.monitorFor(screen));
+    }
 }
