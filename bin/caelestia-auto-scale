@@ -29,11 +29,20 @@ un wdisplays parcheado cada vez que aplicas cambios ahí visualmente.
 Pasada inicial al arrancar + reconciliación en cada `output-added` (docking
 en caliente), vía conexión IPC persistente a ipc-rules (mismo patrón que
 caelestia-ws-watch). Log en /tmp/caelestia-autoscale.log.
+
+Algunas pantallas (una LG TV por HDMI en este equipo) tardan en asentar el
+EDID/modo real tras conectarse, y Wayfire reaplica mientras tanto su config
+estática del .ini (sección `[output]`/`[output:default]`, mode=auto → cae al
+modo de rescate 720x400 si el EDID no marca preferido) SIN que eso dispare
+`output-added` en la IPC. Para cazarlo sin quedarnos sondeando para siempre,
+tras el arranque y tras cada `output-added` se reintenta unas pocas veces
+más (FOLLOWUP_DELAYS) y luego se vuelve a bloquear en el socket sin sondear.
 """
 import glob
 import json
 import math
 import os
+import select
 import socket
 import struct
 import subprocess
@@ -43,6 +52,11 @@ import time
 OVERRIDES_PATH = os.path.expanduser('~/.config/caelestia/auto-scale-overrides.json')
 LAYOUTS_PATH = os.path.expanduser('~/.config/caelestia/output-layouts.json')
 LOG_PATH = '/tmp/caelestia-autoscale.log'
+
+# Tras el arranque o un output-added, reintentos a estos plazos (segundos)
+# para cazar un asentamiento tardío de EDID que no dispara ningún evento.
+# Agotada la lista, se vuelve a bloquear en el socket sin sondear más.
+FOLLOWUP_DELAYS = [3, 8, 15, 30, 60, 120]
 
 TRANSFORM_NAMES = {
     0: 'normal',
@@ -189,7 +203,7 @@ def apply_layout(name, layout, reason):
         log(f"{name}: wlr-randr falló restaurando layout (exit {proc.returncode}): {proc.stderr.strip()}")
 
 
-def reconcile():
+def reconcile(quiet=False):
     overrides = load_overrides()
     layouts = load_layouts()
     try:
@@ -205,7 +219,8 @@ def reconcile():
         layout = layouts.get(identity_key(o))
         if layout and layout.get('enabled', True):
             if layout_matches_current(o, layout):
-                log(f"{o['name']}: ya coincide con el layout guardado, sin cambios")
+                if not quiet:
+                    log(f"{o['name']}: ya coincide con el layout guardado, sin cambios")
             else:
                 apply_layout(o['name'], layout, f"layout guardado para {identity_key(o)!r}")
             continue
@@ -214,7 +229,7 @@ def reconcile():
         target, reason = compute_scale(o, overrides)
         if abs(current - target) > 0.01:
             apply_scale(o['name'], target, reason)
-        else:
+        elif not quiet:
             log(f"{o['name']}: ya en {current} ({reason}), sin cambios")
 
 
@@ -235,13 +250,26 @@ def main():
                  'data': {'events': ['output-added']}})
     recv_msg(s)  # respuesta {"result": "ok"} de la suscripción
 
+    pending_delays = list(FOLLOWUP_DELAYS)
+    next_check = time.monotonic() + pending_delays.pop(0)
+
     while True:
+        timeout = max(0.0, next_check - time.monotonic()) if next_check is not None else None
+        ready, _, _ = select.select([s], [], [], timeout)
+
+        if not ready:
+            reconcile(quiet=True)
+            next_check = time.monotonic() + pending_delays.pop(0) if pending_delays else None
+            continue
+
         msg = recv_msg(s)
         if msg is None:
             return  # wayfire cerró el socket (fin de sesión)
         if msg.get('event') == 'output-added':
             log("output-added, reconciliando")
             reconcile()
+            pending_delays = list(FOLLOWUP_DELAYS)
+            next_check = time.monotonic() + pending_delays.pop(0)
 
 
 if __name__ == '__main__':
