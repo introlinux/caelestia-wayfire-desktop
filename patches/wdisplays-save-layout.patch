@@ -212,7 +212,7 @@ index 35f7ca4..411e2f0 100644
    </interface>
  </protocol>
 diff --git a/src/outputs.c b/src/outputs.c
-index 024a686..70cdf47 100644
+index 024a686..8c59af9 100644
 --- a/src/outputs.c
 +++ b/src/outputs.c
 @@ -21,6 +21,8 @@
@@ -224,7 +224,7 @@ index 024a686..70cdf47 100644
  #include "wdisplays.h"
  
  #include "wlr-output-management-unstable-v1-client-protocol.h"
-@@ -47,10 +49,97 @@ static void destroy_pending(struct wd_pending_config *pending) {
+@@ -47,10 +49,102 @@ static void destroy_pending(struct wd_pending_config *pending) {
    free(pending);
  }
  
@@ -269,14 +269,19 @@ index 024a686..70cdf47 100644
 +    json_append_escaped(buf, head->model);
 +    g_string_append(buf, ",\"serial\":");
 +    json_append_escaped(buf, head->serial);
++    // El separador decimal de %f depende del locale (con es_ES saldría
++    // "2,000000" y el JSON no parsearía), así que la escala se formatea
++    // con g_ascii_formatd, que siempre usa punto.
++    char scale_str[G_ASCII_DTOSTR_BUF_SIZE];
++    g_ascii_formatd(scale_str, sizeof(scale_str), "%f", output->scale);
 +    g_string_append_printf(buf,
 +        ",\"phys_width\":%d,\"phys_height\":%d"
 +        ",\"enabled\":%s,\"width\":%d,\"height\":%d,\"refresh_mhz\":%d"
-+        ",\"x\":%d,\"y\":%d,\"scale\":%f,\"transform\":%d}",
++        ",\"x\":%d,\"y\":%d,\"scale\":%s,\"transform\":%d}",
 +        head->phys_width, head->phys_height,
 +        output->enabled ? "true" : "false",
 +        output->width, output->height, output->refresh,
-+        output->x, output->y, output->scale, (int)output->transform);
++        output->x, output->y, scale_str, (int)output->transform);
 +  }
 +  g_string_append_c(buf, ']');
 +
@@ -322,7 +327,7 @@ index 024a686..70cdf47 100644
    wd_ui_apply_done(pending->state, pending->outputs);
    destroy_pending(pending);
  }
-@@ -337,6 +426,9 @@ static void wd_head_destroy(struct wd_head *head) {
+@@ -337,6 +431,9 @@ static void wd_head_destroy(struct wd_head *head) {
    zwlr_output_head_v1_destroy(head->wlr_head);
    free(head->name);
    free(head->description);
@@ -332,7 +337,7 @@ index 024a686..70cdf47 100644
    free(head);
  }
  
-@@ -387,6 +479,27 @@ static void head_handle_description(void *data,
+@@ -387,6 +484,27 @@ static void head_handle_description(void *data,
    wd_ui_reset_head(head, WD_FIELD_DESCRIPTION);
  }
  
@@ -360,7 +365,7 @@ index 024a686..70cdf47 100644
  static void head_handle_physical_size(void *data,
      struct zwlr_output_head_v1 *wlr_head, int32_t width, int32_t height) {
    struct wd_head *head = data;
-@@ -486,6 +599,9 @@ static const struct zwlr_output_head_v1_listener head_listener = {
+@@ -486,6 +604,9 @@ static const struct zwlr_output_head_v1_listener head_listener = {
    .transform = head_handle_transform,
    .scale = head_handle_scale,
    .finished = head_handle_finished,
@@ -370,7 +375,7 @@ index 024a686..70cdf47 100644
  };
  
  static void output_manager_handle_head(void *data,
-@@ -534,7 +650,7 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
+@@ -534,7 +655,7 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
  
    if (strcmp(interface, zwlr_output_manager_v1_interface.name) == 0) {
      state->output_manager = wl_registry_bind(registry, name,

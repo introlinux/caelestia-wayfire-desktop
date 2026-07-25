@@ -134,6 +134,22 @@ def load_layouts():
         return {}
 
 
+def mode_is_advertised(o, layout):
+    """¿El modo guardado está en la lista que anuncia el panel?
+
+    wdisplays permite fijar resoluciones arbitrarias, que el compositor
+    acepta como modo personalizado pero la pantalla nunca lista. Para esas
+    hay que pedir `--custom-mode`; `--mode` solo admite las anunciadas.
+    """
+    target_hz = layout.get('refresh_mhz', 0) / 1000.0
+    return any(
+        m.get('width') == layout.get('width') and
+        m.get('height') == layout.get('height') and
+        abs(m.get('refresh', 0) - target_hz) < 0.05
+        for m in o.get('modes', [])
+    )
+
+
 def layout_matches_current(o, layout):
     mode = next((m for m in o.get('modes', []) if m.get('current')), None)
     if not mode:
@@ -188,13 +204,15 @@ def apply_scale(name, scale, reason):
         log(f"{name}: wlr-randr falló (exit {proc.returncode}): {proc.stderr.strip()}")
 
 
-def apply_layout(name, layout, reason):
+def apply_layout(name, layout, reason, custom_mode=False):
     hz = layout.get('refresh_mhz', 0) / 1000.0
     transform = TRANSFORM_NAMES.get(layout.get('transform', 0), 'normal')
-    log(f"{name}: restaurando layout {layout['width']}x{layout['height']}@{hz:.3f}Hz "
+    mode_flag = '--custom-mode' if custom_mode else '--mode'
+    log(f"{name}: restaurando layout {layout['width']}x{layout['height']}@{hz:.3f}Hz"
+        f"{' (personalizado)' if custom_mode else ''} "
         f"pos {layout['x']},{layout['y']} scale {layout['scale']} transform {transform} ({reason})")
     proc = subprocess.run(['wlr-randr', '--output', name,
-                           '--mode', f"{layout['width']}x{layout['height']}@{hz:.6f}Hz",
+                           mode_flag, f"{layout['width']}x{layout['height']}@{hz:.6f}Hz",
                            '--pos', f"{layout['x']},{layout['y']}",
                            '--transform', transform,
                            '--scale', f"{layout['scale']:.6f}"],
@@ -222,7 +240,8 @@ def reconcile(quiet=False):
                 if not quiet:
                     log(f"{o['name']}: ya coincide con el layout guardado, sin cambios")
             else:
-                apply_layout(o['name'], layout, f"layout guardado para {identity_key(o)!r}")
+                apply_layout(o['name'], layout, f"layout guardado para {identity_key(o)!r}",
+                             custom_mode=not mode_is_advertised(o, layout))
             continue
 
         current = o.get('scale') or 1.0
