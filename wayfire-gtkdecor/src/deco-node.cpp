@@ -1,0 +1,485 @@
+#include "wayfire/geometry.hpp"
+#include "wayfire/scene-input.hpp"
+#include "wayfire/scene-operations.hpp"
+#include "wayfire/scene-render.hpp"
+#include "wayfire/scene.hpp"
+#include "wayfire/signal-provider.hpp"
+#include "wayfire/toplevel.hpp"
+#include <algorithm>
+#include <memory>
+
+#include <linux/input-event-codes.h>
+
+#include <wayfire/nonstd/wlroots.hpp>
+#include <wayfire/output.hpp>
+#include <wayfire/opengl.hpp>
+#include <wayfire/core.hpp>
+#include <wayfire/signal-definitions.hpp>
+#include <wayfire/toplevel-view.hpp>
+#include <wayfire/window-manager.hpp>
+#include <wayfire/plugins/common/cairo-util.hpp>
+
+#include "deco-node.hpp"
+#include "deco-layout.hpp"
+#include "deco-theme.hpp"
+
+#include <cairo.h>
+
+/**
+ * The scene node which paints the frame around a window. The look it goes for
+ * is that of a GTK client-side header bar: rounded top corners, a hairline
+ * border with a lighter line just inside it, the title centred in bold and a
+ * flat circular button on the right.
+ */
+class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_interaction_t,
+    public wf::touch_interaction_t
+{
+    std::weak_ptr<wf::toplevel_view_interface_t> _view;
+    wf::signal::connection_t<wf::view_title_changed_signal> title_set =
+        [=] (wf::view_title_changed_signal *ev)
+    {
+        if (auto view = _view.lock())
+        {
+            view->damage();
+        }
+    };
+
+    struct
+    {
+        wf::owned_texture_t tex;
+        std::string current_text = "";
+        wf::dimensions_t size    = {0, 0};
+        bool active = false;
+    } title_texture;
+
+    struct
+    {
+        wf::owned_texture_t left;
+        wf::owned_texture_t right;
+        int radius    = -1;
+        double scale  = 0;
+        bool active   = false;
+        bool baked    = false;
+    } corners;
+
+    void update_title(int width, int height, double scale, bool active)
+    {
+        auto view = _view.lock();
+        if (!view)
+        {
+            return;
+        }
+
+        wf::dimensions_t target_size = {
+            static_cast<int32_t>(width * scale),
+            static_cast<int32_t>(height * scale)
+        };
+
+        if ((title_texture.size != target_size) ||
+            (title_texture.current_text != view->get_title()) ||
+            (title_texture.active != active))
+        {
+            auto surface = theme.render_text(view->get_title(), width, height, scale, active);
+            title_texture.tex = wf::owned_texture_t{surface};
+            cairo_surface_destroy(surface);
+            title_texture.current_text = view->get_title();
+            title_texture.size   = target_size;
+            title_texture.active = active;
+        }
+    }
+
+    void update_corners(int radius, double scale, bool active)
+    {
+        if (corners.baked && (corners.radius == radius) && (corners.scale == scale) &&
+            (corners.active == active))
+        {
+            return;
+        }
+
+        auto left = theme.render_corner(radius, false, active, scale);
+        corners.left = wf::owned_texture_t{left};
+        cairo_surface_destroy(left);
+
+        auto right = theme.render_corner(radius, true, active, scale);
+        corners.right = wf::owned_texture_t{right};
+        cairo_surface_destroy(right);
+
+        corners.radius = radius;
+        corners.scale  = scale;
+        corners.active = active;
+        corners.baked  = true;
+    }
+
+  public:
+    wf::gtkdecor::decoration_theme_t theme;
+    wf::gtkdecor::decoration_layout_t layout;
+    wf::region_t cached_region;
+
+    wf::dimensions_t size;
+
+    int current_thickness;
+    int current_titlebar;
+
+    gtk_decoration_node_t(wayfire_toplevel_view view) :
+        node_t(false),
+        theme{},
+        layout{theme, [=] (wlr_box box) { wf::scene::damage_node(shared_from_this(), box + get_offset()); }}
+    {
+        this->_view = view->weak_from_this();
+        view->connect(&title_set);
+        if (view->parent)
+        {
+            theme.set_buttons(wf::gtkdecor::button_type_t(wf::gtkdecor::BUTTON_TOGGLE_MAXIMIZE |
+                wf::gtkdecor::BUTTON_CLOSE));
+        } else
+        {
+            theme.set_buttons(wf::gtkdecor::button_type_t(wf::gtkdecor::BUTTON_MINIMIZE |
+                wf::gtkdecor::BUTTON_TOGGLE_MAXIMIZE | wf::gtkdecor::BUTTON_CLOSE));
+        }
+
+        // make sure to hide frame if the view is fullscreen
+        update_decoration_size();
+    }
+
+    wf::point_t get_offset()
+    {
+        return {-current_thickness, -current_titlebar};
+    }
+
+    void render(const wf::scene::render_instruction_t& data)
+    {
+        const auto origin = get_offset();
+        const int W = size.width;
+        const int H = size.height;
+        const int b = current_thickness;
+        const int T = current_titlebar;
+
+        if ((W <= 0) || (H <= 0))
+        {
+            return;
+        }
+
+        bool active = false;
+        if (auto view = _view.lock())
+        {
+            active = view->activated;
+        }
+
+        const auto bg  = theme.get_background_color(active);
+        const auto bd  = theme.get_border_color(active);
+        const auto hl  = theme.get_highlight_color(active);
+        const auto sep = theme.get_separator_color(active);
+
+        /* All the pieces below are in frame-local coordinates: (0, 0) is the
+         * top left corner of the frame, not of the client. */
+        auto rect = [&] (wf::geometry_t g, const wf::color_t& color)
+        {
+            if ((g.width > 0) && (g.height > 0))
+            {
+                data.pass->add_rect(color, data.target, g + origin, data.damage);
+            }
+        };
+
+        int radius = 0;
+        if (T > 0)
+        {
+            radius = std::clamp(theme.get_corner_radius(), 0, std::min(W / 2, T));
+            if (radius > 0)
+            {
+                update_corners(radius, data.target.scale, active);
+                data.pass->add_texture(corners.left.get_texture(), data.target,
+                    wf::geometry_t{0, 0, radius, radius} + origin, data.damage);
+                data.pass->add_texture(corners.right.get_texture(), data.target,
+                    wf::geometry_t{W - radius, 0, radius, radius} + origin, data.damage);
+            }
+
+            /* Top border and the light line just inside it, between the corners */
+            rect({radius, 0, W - 2 * radius, b}, bd);
+            rect({radius, b, W - 2 * radius, 1}, hl);
+            /* Title bar background: first the band left over between the two
+             * corners, then the full width below them */
+            rect({radius, b + 1, W - 2 * radius, radius - b - 1}, bg);
+            rect({b, radius, W - 2 * b, T - 1 - radius}, bg);
+            /* The line separating the title bar from the client */
+            rect({b, T - 1, W - 2 * b, 1}, sep);
+        } else
+        {
+            rect({0, 0, W, b}, bd);
+        }
+
+        /* Side and bottom borders. Everything between them is covered by the
+         * client, so it is not worth painting. */
+        rect({0, radius, b, H - radius - b}, bd);
+        rect({W - b, radius, b, H - radius - b}, bd);
+        rect({0, H - b, W, b}, bd);
+
+        /* Title and buttons */
+        for (auto item : layout.get_renderable_areas())
+        {
+            if (item->get_type() == wf::gtkdecor::DECORATION_AREA_TITLE)
+            {
+                const int reserved = layout.get_reserved_width();
+                wf::geometry_t title_geometry = {reserved, 0, W - 2 * reserved, T};
+                if (title_geometry.width <= 0)
+                {
+                    continue;
+                }
+
+                update_title(title_geometry.width, title_geometry.height, data.target.scale, active);
+                if (title_texture.tex.get_texture().texture != NULL)
+                {
+                    data.pass->add_texture(title_texture.tex.get_texture(), data.target,
+                        title_geometry + origin, data.damage);
+                }
+            } else // button
+            {
+                item->as_button().render(data, item->get_geometry() + origin, active);
+            }
+        }
+    }
+
+    std::optional<wf::scene::input_node_t> find_node_at(const wf::pointf_t& at) override
+    {
+        if (auto view = _view.lock())
+        {
+            wf::pointf_t local = at - wf::pointf_t{get_offset()};
+            if (cached_region.contains_pointf(local) && view->is_mapped())
+            {
+                return wf::scene::input_node_t{
+                    .node = this,
+                    .local_coords = local,
+                };
+            }
+        }
+
+        return {};
+    }
+
+    pointer_interaction_t& pointer_interaction() override
+    {
+        return *this;
+    }
+
+    touch_interaction_t& touch_interaction() override
+    {
+        return *this;
+    }
+
+    class decoration_render_instance_t : public wf::scene::render_instance_t
+    {
+        std::shared_ptr<gtk_decoration_node_t> self;
+        wf::scene::damage_callback push_damage;
+
+        wf::signal::connection_t<wf::scene::node_damage_signal> on_surface_damage =
+            [=] (wf::scene::node_damage_signal *data)
+        {
+            push_damage(data->region);
+        };
+
+      public:
+        decoration_render_instance_t(gtk_decoration_node_t *self, wf::scene::damage_callback push_damage)
+        {
+            this->self = std::dynamic_pointer_cast<gtk_decoration_node_t>(self->shared_from_this());
+            this->push_damage = push_damage;
+            self->connect(&on_surface_damage);
+        }
+
+        void schedule_instructions(std::vector<wf::scene::render_instruction_t>& instructions,
+            const wf::render_target_t& target, wf::region_t& damage) override
+        {
+            auto our_region = self->cached_region + self->get_offset();
+            wf::region_t our_damage = damage & our_region;
+            if (!our_damage.empty())
+            {
+                instructions.push_back(wf::scene::render_instruction_t{
+                    .instance = this,
+                    .target   = target,
+                    .damage   = std::move(our_damage),
+                });
+            }
+        }
+
+        void render(const wf::scene::render_instruction_t& data) override
+        {
+            self->render(data);
+        }
+    };
+
+    void gen_render_instances(std::vector<wf::scene::render_instance_uptr>& instances,
+        wf::scene::damage_callback push_damage, wf::output_t *output = nullptr) override
+    {
+        instances.push_back(std::make_unique<decoration_render_instance_t>(this, push_damage));
+    }
+
+    wf::geometry_t get_bounding_box() override
+    {
+        return wf::construct_box(get_offset(), size);
+    }
+
+    /* wf::compositor_surface_t implementation */
+    void handle_pointer_enter(wf::pointf_t point) override
+    {
+        point -= wf::pointf_t{get_offset()};
+        layout.handle_motion(point.x, point.y);
+    }
+
+    void handle_pointer_leave() override
+    {
+        layout.handle_focus_lost();
+    }
+
+    void handle_pointer_motion(wf::pointf_t to, uint32_t) override
+    {
+        to -= wf::pointf_t{get_offset()};
+        handle_action(layout.handle_motion(to.x, to.y));
+    }
+
+    void handle_pointer_button(const wlr_pointer_button_event& ev) override
+    {
+        if (ev.button != BTN_LEFT)
+        {
+            return;
+        }
+
+        handle_action(layout.handle_press_event(ev.state == WL_POINTER_BUTTON_STATE_PRESSED));
+    }
+
+    void handle_action(wf::gtkdecor::decoration_layout_t::action_response_t action)
+    {
+        if (auto view = _view.lock())
+        {
+            switch (action.action)
+            {
+              case wf::gtkdecor::DECORATION_ACTION_MOVE:
+                return wf::get_core().default_wm->move_request(view);
+
+              case wf::gtkdecor::DECORATION_ACTION_RESIZE:
+                return wf::get_core().default_wm->resize_request(view, action.edges);
+
+              case wf::gtkdecor::DECORATION_ACTION_CLOSE:
+                return view->close();
+
+              case wf::gtkdecor::DECORATION_ACTION_TOGGLE_MAXIMIZE:
+                if (view->pending_tiled_edges())
+                {
+                    return wf::get_core().default_wm->tile_request(view, 0);
+                } else
+                {
+                    return wf::get_core().default_wm->tile_request(view, wf::TILED_EDGES_ALL);
+                }
+
+                break;
+
+              case wf::gtkdecor::DECORATION_ACTION_MINIMIZE:
+                return wf::get_core().default_wm->minimize_request(view, true);
+                break;
+
+              default:
+                break;
+            }
+        }
+    }
+
+    void handle_touch_down(uint32_t time_ms, int finger_id, wf::pointf_t position) override
+    {
+        handle_touch_motion(time_ms, finger_id, position);
+        handle_action(layout.handle_press_event());
+    }
+
+    void handle_touch_up(uint32_t time_ms, int finger_id, wf::pointf_t lift_off_position) override
+    {
+        handle_action(layout.handle_press_event(false));
+        layout.handle_focus_lost();
+    }
+
+    void handle_touch_motion(uint32_t time_ms, int finger_id, wf::pointf_t position) override
+    {
+        position -= wf::pointf_t{get_offset()};
+        handle_action(layout.handle_motion(position.x, position.y));
+    }
+
+    void resize(wf::dimensions_t dims)
+    {
+        if (auto view = _view.lock())
+        {
+            view->damage();
+            size = dims;
+            layout.resize(size.width, size.height);
+            if (!view->toplevel()->current().fullscreen)
+            {
+                this->cached_region = layout.calculate_region();
+            }
+
+            view->damage();
+        }
+    }
+
+    void update_decoration_size()
+    {
+        bool fullscreen = _view.lock()->toplevel()->current().fullscreen;
+        if (fullscreen)
+        {
+            current_thickness = 0;
+            current_titlebar  = 0;
+            this->cached_region.clear();
+        } else
+        {
+            current_thickness = theme.get_border_size();
+            current_titlebar  = theme.get_title_height() + theme.get_border_size();
+            this->cached_region = layout.calculate_region();
+        }
+    }
+};
+
+wf::gtk_decorator_t::gtk_decorator_t(wayfire_toplevel_view view)
+{
+    this->view = view;
+    deco = std::make_shared<gtk_decoration_node_t>(view);
+    deco->resize(wf::dimensions(view->get_pending_geometry()));
+    wf::scene::add_back(view->get_surface_root_node(), deco);
+
+    view->connect(&on_view_activated);
+    view->connect(&on_view_geometry_changed);
+    view->connect(&on_view_fullscreen);
+
+    on_view_activated = [this] (auto)
+    {
+        wf::scene::damage_node(deco, deco->get_bounding_box());
+    };
+
+    on_view_geometry_changed = [this] (auto)
+    {
+        deco->resize(wf::dimensions(this->view->get_geometry()));
+    };
+
+    on_view_fullscreen = [this] (auto)
+    {
+        deco->update_decoration_size();
+        if (!this->view->toplevel()->current().fullscreen)
+        {
+            deco->resize(wf::dimensions(this->view->get_geometry()));
+        }
+    };
+}
+
+wf::gtk_decorator_t::~gtk_decorator_t()
+{
+    wf::scene::remove_child(deco);
+}
+
+wf::decoration_margins_t wf::gtk_decorator_t::get_margins(const wf::toplevel_state_t& state)
+{
+    if (state.fullscreen)
+    {
+        return {0, 0, 0, 0};
+    }
+
+    const int thickness = deco->theme.get_border_size();
+    const int titlebar  = deco->theme.get_title_height() + deco->theme.get_border_size();
+    return wf::decoration_margins_t{
+        .left   = thickness,
+        .right  = thickness,
+        .bottom = thickness,
+        .top    = titlebar,
+    };
+}

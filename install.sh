@@ -198,6 +198,17 @@ ANIMPATCH
     ninja -C "$BUILD_DIR/wayfire-intro"
     sudo ninja -C "$BUILD_DIR/wayfire-intro" install
 
+    # --- gtkdecor (adornos de ventana con aspecto GTK/Adwaita, in-repo) -------
+    # Sustituye al plugin `decoration` del core: en plugins= va uno u otro,
+    # nunca los dos (ambos decoran el mismo toplevel).
+    log "Compilando wayfire-gtkdecor"
+    rm -rf "$BUILD_DIR/wayfire-gtkdecor"
+    PKG_CONFIG_PATH=/usr/local/lib/x86_64-linux-gnu/pkgconfig meson setup \
+        "$BUILD_DIR/wayfire-gtkdecor" "$REPO/wayfire-gtkdecor" \
+        --prefix=/usr/local --buildtype=release
+    ninja -C "$BUILD_DIR/wayfire-gtkdecor"
+    sudo ninja -C "$BUILD_DIR/wayfire-gtkdecor" install
+
     # --- WCM (Wayfire Config Manager) contra el wayfire de /usr/local ---------
     # El wcm de Ubuntu lleva compilada la ruta /usr/share/wayfire/metadata, así
     # que no ve los plugins del stack de /usr/local (shift-switcher, view-shot…).

@@ -1,0 +1,126 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="gtkdecor">
+		<_short>GTK-like Decoration</_short>
+		<_long>Server side decorations that copy the look of a GTK/Adwaita header bar, so that Qt, old GTK and other toolkits which do not draw their own decorations blend in with the rest of the desktop. Replaces the built-in "decoration" plugin: enable one or the other, never both.</_long>
+		<category>Effects</category>
+
+		<group>
+			<_short>Sizes</_short>
+			<option name="title_height" type="int">
+				<_short>Title bar height</_short>
+				<_long>Height of the title bar in pixels, top border excluded. 37 matches a GTK header bar.</_long>
+				<default>37</default>
+				<min>0</min>
+				<max>100</max>
+			</option>
+			<option name="border_size" type="int">
+				<_short>Border size</_short>
+				<_long>Thickness of the window border in pixels.</_long>
+				<default>1</default>
+				<min>0</min>
+				<max>100</max>
+			</option>
+			<option name="corner_radius" type="int">
+				<_short>Corner radius</_short>
+				<_long>Radius of the two top corners in pixels. Only the top corners can be rounded: the bottom ones belong to the client, which draws them square.</_long>
+				<default>18</default>
+				<min>0</min>
+				<max>50</max>
+			</option>
+			<option name="button_size" type="int">
+				<_short>Button size</_short>
+				<_long>Diameter of the round title bar buttons in pixels.</_long>
+				<default>22</default>
+				<min>4</min>
+				<max>100</max>
+			</option>
+			<option name="button_padding" type="int">
+				<_short>Button padding</_short>
+				<_long>Gap between the buttons and the window edge, in pixels.</_long>
+				<default>7</default>
+				<min>0</min>
+				<max>100</max>
+			</option>
+			<option name="button_spacing" type="int">
+				<_short>Button spacing</_short>
+				<_long>Gap between two adjacent buttons, in pixels.</_long>
+				<default>6</default>
+				<min>0</min>
+				<max>100</max>
+			</option>
+		</group>
+
+		<group>
+			<_short>Contents</_short>
+			<option name="font" type="string">
+				<_short>Font</_short>
+				<_long>Font used for the window title. GTK header bars use the interface font in bold.</_long>
+				<default>Adwaita Sans Bold 11</default>
+			</option>
+			<option name="button_order" type="string">
+				<_short>Order of window buttons</_short>
+				<_long>Which buttons to show and in which order, out of "minimize", "maximize" and "close". Leave it as just "close" to match the GNOME/Ubuntu button layout.</_long>
+				<default>close</default>
+			</option>
+		</group>
+
+		<group>
+			<_short>Colors</_short>
+			<option name="active_color" type="color">
+				<_short>Title bar background (focused)</_short>
+				<_long>Background of the title bar of the focused window.</_long>
+				<default>#EBEBEBFF</default>
+			</option>
+			<option name="inactive_color" type="color">
+				<_short>Title bar background (unfocused)</_short>
+				<_long>Background of the title bar of unfocused windows.</_long>
+				<default>#FAFAFAFF</default>
+			</option>
+			<option name="border_color" type="color">
+				<_short>Border color</_short>
+				<_long>Color of the hairline around the window.</_long>
+				<default>#9A9A9CFF</default>
+			</option>
+			<option name="highlight_color" type="color">
+				<_short>Highlight color</_short>
+				<_long>Color of the light line drawn just inside the top border.</_long>
+				<default>#FBFBFBFF</default>
+			</option>
+			<option name="separator_color" type="color">
+				<_short>Separator color</_short>
+				<_long>Color of the line between the title bar and the window contents.</_long>
+				<default>#BDBDBDFF</default>
+			</option>
+			<option name="font_color" type="color">
+				<_short>Title color (focused)</_short>
+				<_long>Color of the title and of the button icons of the focused window.</_long>
+				<default>#3D3D3DFF</default>
+			</option>
+			<option name="inactive_font_color" type="color">
+				<_short>Title color (unfocused)</_short>
+				<_long>Color of the title and of the button icons of unfocused windows.</_long>
+				<default>#3D3D3D80</default>
+			</option>
+			<option name="button_color" type="color">
+				<_short>Button color</_short>
+				<_long>Color of the round background of a button at rest. Its alpha is multiplied by 1.8 while hovered and by 2.6 while pressed. Use a translucent white instead of black for dark themes.</_long>
+				<default>#00000012</default>
+			</option>
+		</group>
+
+		<group>
+			<_short>Which windows</_short>
+			<option name="ignore_views" type="string">
+				<_short>Decoration disabled for specified window types</_short>
+				<_long>Disables window decoration for windows matching the specified criteria.</_long>
+				<default>none</default>
+			</option>
+			<option name="forced_views" type="string">
+				<_short>Force decorations for specified window types</_short>
+				<_long>Forces window decoration for windows matching the specified criteria, overriding client decoration preference.</_long>
+				<default>none</default>
+			</option>
+		</group>
+	</plugin>
+</wayfire>

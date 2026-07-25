@@ -61,7 +61,6 @@ manteniendo intacta la estética QML/Material You.
 | Indicador de ventanas por workspace (puntos) | `wlr-foreign-toplevel` no expone en qué workspace está cada ventana |
 | Enviar ventana a workspace desde popup | Investigando: `stipc/feed_key` retorna 'ok' pero no confirmado que mueva la ventana |
 | Barra de título en foot y apps sin CSD | foot no tiene CSD; se mueve con Alt+drag |
-| Personalización de botones en decoración SSD | El plugin `decoration` de Wayfire los dibuja en código hardcodeado, sin temas |
 | Squeezimize anima hacia el icono de la barra | Bug en Quickshell 0.2.1: `setRectangle` crashea en compositors no-Hyprland (ver §10) |
 
 ---
@@ -105,7 +104,7 @@ Super+F5  → pkill quickshell && quickshell -c ~/.caelestia/caelestia-wayfire &
 Plugins obligatorios:
 ```ini
 [core]
-plugins = animate autostart command vswitch decoration expo fast-switcher \
+plugins = animate autostart command vswitch gtkdecor expo fast-switcher \
   foreign-toplevel grid idle ipc move place resize scale stipc switcher \
   window-rules wm-actions wobbly wrot zoom
 ```
@@ -774,17 +773,12 @@ activo (Yaru-wartybrown) — fuente, colores, iconos y diálogos de archivo.
 
 ### CSD vs SSD — decoraciones de ventana
 
-El plugin `[decoration]` de Wayfire dibuja barras de título para apps que no
-tienen la suya (SSD — server-side decorations). Sus botones son figuras
-geométricas hardcodeadas en código, sin soporte de temas.
-
-**Decisión adoptada: usar CSD** (client-side decorations) en lugar de SSD
-global. Cada app dibuja su propia barra:
+**Decisión adoptada: CSD** (client-side decorations) siempre que la app las
+sepa dibujar. Cada app dibuja su propia barra:
 
 - Apps GTK4 (Calculator, Nautilus…): barra Adwaita idéntica a GNOME ✓
 - Apps Qt con `QT_QPA_PLATFORMTHEME=gtk3`: siguen Yaru ✓
 - VLC, Firefox, LibreOffice: sus propias CSD ✓
-- **foot y apps sin CSD**: sin barra de título — mover con Alt+arrastrar
 
 Configuración aplicada:
 
@@ -801,26 +795,37 @@ Si una app concreta necesita SSD, añadir una regla específica:
 rule_foot = on created if app_id equals foot then assign_decoration_mode server
 ```
 
-### Decoración SSD para apps sin CSD (HiDPI)
+### Decoración SSD con aspecto GTK: el plugin `gtkdecor`
 
-Para las apps que aún reciben SSD (si se reactiva la regla), los colores
-extraídos directamente del tema GTK3 de Yaru-wartybrown:
+Las apps que **no** dibujan su propia barra (Qt como VLC, GTK2/3 viejo como
+synaptic o gparted, otras librerías como Audacity) reciben decoración del
+compositor. El plugin `decoration` del core de Wayfire las pintaba con un
+aspecto muy distinto al del resto del escritorio: barra plana con esquinas
+rectas, título a la izquierda y tres círculos tipo semáforo dibujados en código.
+
+En su lugar se usa **`gtkdecor`** (`wayfire-gtkdecor/` en este repo, fork de
+`decoration`), que replica la barra de título de GTK4/libadwaita: esquinas
+superiores redondeadas, borde de un píxel con línea de luz por dentro,
+separador con el cliente, título centrado en negrita y botón circular plano con
+el glifo `window-close-symbolic` de Yaru. Los valores por defecto están medidos
+píxel a píxel sobre una ventana GTK real (ver `wayfire-gtkdecor/NOTES.md` §2).
 
 ```ini
-[decoration]
-active_color   = \#EBEBEBFF   # headerbar activo de Yaru-wartybrown (medido via GTK3)
-inactive_color = \#D8D8D8FF   # headerbar inactivo
-font_color     = \#3D3D3DFF   # texto oscuro (igual que GNOME)
-font           = Ubuntu Bold 8
-title_height   = 22
-border_size    = 1
-button_order   = minimize maximize close
+plugins = … gtkdecor …   # NUNCA junto con `decoration`: uno u otro
+
+[gtkdecor]
+title_height  = 37
+border_size   = 1
+corner_radius = 18
+button_order  = close     # igual que el button-layout appmenu:close de GNOME
+font          = Adwaita Sans Bold 11
 ```
 
-**Nota HiDPI:** el plugin `decoration` renderiza la fuente a la densidad física
-del display (276 DPI en pantalla 3000×2000). A escala 2×, 11pt físicos equivalen
-visualmente a ~22pt — hay que usar aproximadamente la mitad del tamaño deseado.
-En este equipo, `8` produce un resultado visualmente equivalente a 11pt en 96 DPI.
+La lista completa de opciones está en `wayfire-gtkdecor/README.md`.
+
+**HiDPI:** a diferencia del plugin del core, `gtkdecor` hornea texto, botones y
+esquinas a `tamaño × escala del output`, así que el tamaño de fuente se pone en
+puntos reales (11) y no hay que compensar la escala a mano.
 
 ### Problema 5: Animación squeezimize sin apuntar al icono
 
