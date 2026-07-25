@@ -71,7 +71,7 @@ Item {
                                 spacing: Tokens.spacing.small
 
                                 StyledText {
-                                    text: qsTr("Devices (%1)").arg(Audio.sinks.length)
+                                    text: qsTr("Devices (%1)").arg(Audio.outputs.length)
                                     font.pointSize: Tokens.font.size.normal
                                     font.weight: 500
                                 }
@@ -85,20 +85,24 @@ Item {
 
                             Repeater {
                                 Layout.fillWidth: true
-                                model: Audio.sinks
+                                model: Audio.outputs
 
                                 delegate: StyledRect {
+                                    id: outputDelegate
+
                                     required property var modelData
+
+                                    readonly property bool active: Audio.isActiveOutput(modelData)
 
                                     Layout.fillWidth: true
 
-                                    color: Audio.sink?.id === modelData.id ? Colours.layer(Colours.palette.m3surfaceContainer, 2) : "transparent"
+                                    color: active ? Colours.layer(Colours.palette.m3surfaceContainer, 2) : "transparent"
                                     radius: Tokens.rounding.normal
                                     implicitHeight: outputRowLayout.implicitHeight + Tokens.padding.normal * 2
 
                                     StateLayer {
                                         onClicked: {
-                                            Audio.setAudioSink(modelData);
+                                            Audio.selectOutput(outputDelegate.modelData);
                                         }
                                     }
 
@@ -113,18 +117,34 @@ Item {
                                         spacing: Tokens.spacing.normal
 
                                         MaterialIcon {
-                                            text: Audio.sink?.id === modelData.id ? "speaker" : "speaker_group"
+                                            text: Audio.iconForEntry(outputDelegate.modelData, outputDelegate.active ? "speaker" : "speaker_group")
                                             font.pointSize: Tokens.font.size.large
-                                            fill: Audio.sink?.id === modelData.id ? 1 : 0
+                                            fill: outputDelegate.active ? 1 : 0
                                         }
 
-                                        StyledText {
+                                        ColumnLayout {
                                             Layout.fillWidth: true
-                                            elide: Text.ElideRight
-                                            maximumLineCount: 1
+                                            spacing: 0
 
-                                            text: modelData.description || qsTr("Unknown")
-                                            font.weight: Audio.sink?.id === modelData.id ? 500 : 400
+                                            StyledText {
+                                                Layout.fillWidth: true
+                                                elide: Text.ElideRight
+                                                maximumLineCount: 1
+
+                                                text: outputDelegate.modelData.name
+                                                font.weight: outputDelegate.active ? 500 : 400
+                                            }
+
+                                            StyledText {
+                                                Layout.fillWidth: true
+                                                visible: text !== ""
+                                                elide: Text.ElideRight
+                                                maximumLineCount: 1
+
+                                                text: outputDelegate.modelData.detail
+                                                color: Colours.palette.m3outline
+                                                font.pointSize: Tokens.font.size.small
+                                            }
                                         }
                                     }
                                 }
@@ -148,7 +168,7 @@ Item {
                                 spacing: Tokens.spacing.small
 
                                 StyledText {
-                                    text: qsTr("Devices (%1)").arg(Audio.sources.length)
+                                    text: qsTr("Devices (%1)").arg(Audio.inputs.length)
                                     font.pointSize: Tokens.font.size.normal
                                     font.weight: 500
                                 }
@@ -162,20 +182,24 @@ Item {
 
                             Repeater {
                                 Layout.fillWidth: true
-                                model: Audio.sources
+                                model: Audio.inputs
 
                                 delegate: StyledRect {
+                                    id: inputDelegate
+
                                     required property var modelData
+
+                                    readonly property bool active: Audio.isActiveInput(modelData)
 
                                     Layout.fillWidth: true
 
-                                    color: Audio.source?.id === modelData.id ? Colours.layer(Colours.palette.m3surfaceContainer, 2) : "transparent"
+                                    color: active ? Colours.layer(Colours.palette.m3surfaceContainer, 2) : "transparent"
                                     radius: Tokens.rounding.normal
                                     implicitHeight: inputRowLayout.implicitHeight + Tokens.padding.normal * 2
 
                                     StateLayer {
                                         onClicked: {
-                                            Audio.setAudioSource(modelData);
+                                            Audio.selectInput(inputDelegate.modelData);
                                         }
                                     }
 
@@ -190,18 +214,34 @@ Item {
                                         spacing: Tokens.spacing.normal
 
                                         MaterialIcon {
-                                            text: "mic"
+                                            text: Audio.iconForEntry(inputDelegate.modelData, "mic")
                                             font.pointSize: Tokens.font.size.large
-                                            fill: Audio.source?.id === modelData.id ? 1 : 0
+                                            fill: inputDelegate.active ? 1 : 0
                                         }
 
-                                        StyledText {
+                                        ColumnLayout {
                                             Layout.fillWidth: true
-                                            elide: Text.ElideRight
-                                            maximumLineCount: 1
+                                            spacing: 0
 
-                                            text: modelData.description || qsTr("Unknown")
-                                            font.weight: Audio.source?.id === modelData.id ? 500 : 400
+                                            StyledText {
+                                                Layout.fillWidth: true
+                                                elide: Text.ElideRight
+                                                maximumLineCount: 1
+
+                                                text: inputDelegate.modelData.name
+                                                font.weight: inputDelegate.active ? 500 : 400
+                                            }
+
+                                            StyledText {
+                                                Layout.fillWidth: true
+                                                visible: text !== ""
+                                                elide: Text.ElideRight
+                                                maximumLineCount: 1
+
+                                                text: inputDelegate.modelData.detail
+                                                color: Colours.palette.m3outline
+                                                font.pointSize: Tokens.font.size.small
+                                            }
                                         }
                                     }
                                 }

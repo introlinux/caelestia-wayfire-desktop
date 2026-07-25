@@ -3,7 +3,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import Quickshell.Services.Pipewire
 import Caelestia.Config
 import qs.components
 import qs.components.controls
@@ -41,19 +40,19 @@ Item {
         }
 
         Repeater {
-            model: Audio.sinks
+            model: Audio.outputs
 
             StyledRadioButton {
                 id: control
 
-                required property PwNode modelData
+                required property var modelData
 
                 visible: root.view === "output"
                 Layout.preferredHeight: visible ? implicitHeight : 0
                 ButtonGroup.group: sinks
-                checked: Audio.sink?.id === modelData.id
-                onClicked: Audio.setAudioSink(modelData)
-                text: modelData.description
+                checked: Audio.isActiveOutput(modelData)
+                onClicked: Audio.selectOutput(modelData)
+                text: modelData.name
             }
         }
 
@@ -65,17 +64,17 @@ Item {
         }
 
         Repeater {
-            model: Audio.sources
+            model: Audio.inputs
 
             StyledRadioButton {
-                required property PwNode modelData
+                required property var modelData
 
                 visible: root.view === "input"
                 Layout.preferredHeight: visible ? implicitHeight : 0
                 ButtonGroup.group: sources
-                checked: Audio.source?.id === modelData.id
-                onClicked: Audio.setAudioSource(modelData)
-                text: modelData.description
+                checked: Audio.isActiveInput(modelData)
+                onClicked: Audio.selectInput(modelData)
+                text: modelData.name
             }
         }
 
