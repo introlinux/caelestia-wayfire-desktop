@@ -27,6 +27,8 @@ GSR_REPO="https://repo.dec05eba.com/gpu-screen-recorder"
 GSR_COMMIT="e48be50"
 WCM_REPO="https://github.com/WayfireWM/wcm.git"
 WCM_TAG="v0.10.0"
+WDISPLAYS_REPO="https://github.com/artizirk/wdisplays.git"
+WDISPLAYS_TAG="1.1.3"
 CAELESTIA_CLI_REPO="https://github.com/caelestia-dots/cli.git"
 CAELESTIA_CLI_COMMIT="eddee4dec"
 ONEKO_REPO="https://github.com/Abishek-Pechiappan/Oneko-Rust-Arch"
@@ -223,6 +225,32 @@ ANIMPATCH
             --prefix=/usr/local --buildtype=release
         ninja -C "$BUILD_DIR/wcm/build"
         sudo ninja -C "$BUILD_DIR/wcm/build" install
+    fi
+
+    # --- wdisplays (configurador visual de pantallas, parcheado) --------------
+    # El wdisplays de Ubuntu (1.1.3) solo pide la versión 1 del protocolo
+    # wlr-output-management y no persiste nada: cada Apply se pierde al
+    # reiniciar. El parche sube el bind a la versión 2 (eventos make/model/
+    # serial_number, ya soportados por el wlroots de /usr/local) y, tras un
+    # Apply exitoso, vuelca el layout aplicado a caelestia-save-layout (bin/),
+    # que lo persiste en ~/.config/caelestia/output-layouts.json indexado por
+    # identidad de panel. caelestia-auto-scale restaura ese layout completo
+    # (modo+posición+transform+escala) en cada arranque/hotplug antes de caer
+    # a su heurístico de escala por DPI. Se instala solo el binario en
+    # ~/.local/bin (tiene prioridad en el PATH sobre /usr/bin/wdisplays);
+    # no se toca el paquete de apt ni se hace `ninja install`.
+    if strings "$HOME/.local/bin/wdisplays" 2>/dev/null | grep -q "caelestia-save-layout"; then
+        log "wdisplays (parcheado) ya instalado — omitiendo"
+    else
+        log "Compilando wdisplays $WDISPLAYS_TAG"
+        rm -rf "$BUILD_DIR/wdisplays"
+        git clone --depth 1 --branch "$WDISPLAYS_TAG" "$WDISPLAYS_REPO" "$BUILD_DIR/wdisplays"
+        log "Aplicando parche de persistencia de layout"
+        git -C "$BUILD_DIR/wdisplays" apply "$REPO/patches/wdisplays-save-layout.patch"
+        meson setup "$BUILD_DIR/wdisplays/build" "$BUILD_DIR/wdisplays" \
+            --prefix=/usr/local --buildtype=release
+        ninja -C "$BUILD_DIR/wdisplays/build"
+        install -Dm755 "$BUILD_DIR/wdisplays/build/src/wdisplays" "$HOME/.local/bin/wdisplays"
     fi
 
     # --- Quickshell -----------------------------------------------------------

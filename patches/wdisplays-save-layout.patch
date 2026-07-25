@@ -1,0 +1,393 @@
+diff --git a/protocol/wlr-output-management-unstable-v1.xml b/protocol/wlr-output-management-unstable-v1.xml
+index 35f7ca4..411e2f0 100644
+--- a/protocol/wlr-output-management-unstable-v1.xml
++++ b/protocol/wlr-output-management-unstable-v1.xml
+@@ -39,7 +39,7 @@
+     interface version number is reset.
+   </description>
+ 
+-  <interface name="zwlr_output_manager_v1" version="1">
++  <interface name="zwlr_output_manager_v1" version="4">
+     <description summary="output device configuration manager">
+       This interface is a manager that allows reading and writing the current
+       output device configuration.
+@@ -115,7 +115,7 @@
+       </description>
+     </request>
+ 
+-    <event name="finished">
++    <event name="finished" type="destructor">
+       <description summary="the compositor has finished with the manager">
+         This event indicates that the compositor is done sending manager events.
+         The compositor will destroy the object immediately after sending this
+@@ -125,7 +125,7 @@
+     </event>
+   </interface>
+ 
+-  <interface name="zwlr_output_head_v1" version="1">
++  <interface name="zwlr_output_head_v1" version="4">
+     <description summary="output device">
+       A head is an output device. The difference between a wl_output object and
+       a head is that heads are advertised even if they are turned off. A head
+@@ -251,15 +251,112 @@
+     </event>
+ 
+     <event name="finished">
+-      <description summary="the head has been destroyed">
+-        The compositor will destroy the object immediately after sending this
+-        event, so it will become invalid and the client should release any
+-        resources associated with it.
++      <description summary="the head has disappeared">
++        This event indicates that the head is no longer available. The head
++        object becomes inert. Clients should send a destroy request and release
++        any resources associated with it.
++      </description>
++    </event>
++
++    <!-- Version 2 additions -->
++
++    <event name="make" since="2">
++      <description summary="head manufacturer">
++        This event describes the manufacturer of the head.
++
++        This must report the same make as the wl_output interface does in its
++        geometry event.
++
++        Together with the model and serial_number events the purpose is to
++        allow clients to recognize heads from previous sessions and for example
++        load head-specific configurations back.
++
++        It is not guaranteed this event will be ever sent. A reason for that
++        can be that the compositor does not have information about the make of
++        the head or the definition of a make is not sensible in the current
++        setup, for example in a virtual session. Clients can still try to
++        identify the head by available information from other events but should
++        be aware that there is an increased risk of false positives.
++
++        It is not recommended to display the make string in UI to users. For
++        that the string provided by the description event should be preferred.
++      </description>
++      <arg name="make" type="string"/>
++    </event>
++
++    <event name="model" since="2">
++      <description summary="head model">
++        This event describes the model of the head.
++
++        This must report the same model as the wl_output interface does in its
++        geometry event.
++
++        Together with the make and serial_number events the purpose is to
++        allow clients to recognize heads from previous sessions and for example
++        load head-specific configurations back.
++
++        It is not guaranteed this event will be ever sent. A reason for that
++        can be that the compositor does not have information about the model of
++        the head or the definition of a model is not sensible in the current
++        setup, for example in a virtual session. Clients can still try to
++        identify the head by available information from other events but should
++        be aware that there is an increased risk of false positives.
++
++        It is not recommended to display the model string in UI to users. For
++        that the string provided by the description event should be preferred.
++      </description>
++      <arg name="model" type="string"/>
++    </event>
++
++    <event name="serial_number" since="2">
++      <description summary="head serial number">
++        This event describes the serial number of the head.
++
++        Together with the make and model events the purpose is to allow clients
++        to recognize heads from previous sessions and for example load head-
++        specific configurations back.
++
++        It is not guaranteed this event will be ever sent. A reason for that
++        can be that the compositor does not have information about the serial
++        number of the head or the definition of a serial number is not sensible
++        in the current setup. Clients can still try to identify the head by
++        available information from other events but should be aware that there
++        is an increased risk of false positives.
++
++        It is not recommended to display the serial_number string in UI to
++        users. For that the string provided by the description event should be
++        preferred.
++      </description>
++      <arg name="serial_number" type="string"/>
++    </event>
++
++    <!-- Version 3 additions -->
++
++    <request name="release" type="destructor" since="3">
++      <description summary="destroy the head object">
++        This request indicates that the client will no longer use this head
++        object.
++      </description>
++    </request>
++
++    <!-- Version 4 additions -->
++
++    <enum name="adaptive_sync_state" since="4">
++      <entry name="disabled" value="0" summary="adaptive sync is disabled"/>
++      <entry name="enabled" value="1" summary="adaptive sync is enabled"/>
++    </enum>
++
++    <event name="adaptive_sync" since="4">
++      <description summary="current adaptive sync state">
++        This event describes whether adaptive sync is currently enabled for
++        the head or not. Adaptive sync is also known as Variable Refresh
++        Rate or VRR.
+       </description>
++      <arg name="state" type="uint" enum="adaptive_sync_state"/>
+     </event>
+   </interface>
+ 
+-  <interface name="zwlr_output_mode_v1" version="1">
++  <interface name="zwlr_output_mode_v1" version="3">
+     <description summary="output mode">
+       This object describes an output mode.
+ 
+@@ -297,15 +394,24 @@
+     </event>
+ 
+     <event name="finished">
+-      <description summary="the mode has been destroyed">
+-        The compositor will destroy the object immediately after sending this
+-        event, so it will become invalid and the client should release any
+-        resources associated with it.
++      <description summary="the mode has disappeared">
++        This event indicates that the mode is no longer available. The mode
++        object becomes inert. Clients should send a destroy request and release
++        any resources associated with it.
+       </description>
+     </event>
++
++    <!-- Version 3 additions -->
++
++    <request name="release" type="destructor" since="3">
++      <description summary="destroy the mode object">
++        This request indicates that the client will no longer use this mode
++        object.
++      </description>
++    </request>
+   </interface>
+ 
+-  <interface name="zwlr_output_configuration_v1" version="1">
++  <interface name="zwlr_output_configuration_v1" version="4">
+     <description summary="output configuration">
+       This object is used by the client to describe a full output configuration.
+ 
+@@ -423,7 +529,7 @@
+     </request>
+   </interface>
+ 
+-  <interface name="zwlr_output_configuration_head_v1" version="1">
++  <interface name="zwlr_output_configuration_head_v1" version="4">
+     <description summary="head configuration">
+       This object is used by the client to update a single head's configuration.
+ 
+@@ -436,6 +542,8 @@
+       <entry name="invalid_custom_mode" value="3" summary="mode is invalid"/>
+       <entry name="invalid_transform" value="4" summary="transform value outside enum"/>
+       <entry name="invalid_scale" value="5" summary="scale negative or zero"/>
++      <entry name="invalid_adaptive_sync_state" value="6" since="4"
++        summary="invalid enum value used in the set_adaptive_sync request"/>
+     </enum>
+ 
+     <request name="set_mode">
+@@ -479,5 +587,15 @@
+       </description>
+       <arg name="scale" type="fixed"/>
+     </request>
++
++    <!-- Version 4 additions -->
++
++    <request name="set_adaptive_sync" since="4">
++      <description summary="enable/disable adaptive sync">
++        This request enables/disables adaptive sync. Adaptive sync is also
++        known as Variable Refresh Rate or VRR.
++      </description>
++      <arg name="state" type="uint" enum="zwlr_output_head_v1.adaptive_sync_state"/>
++    </request>
+   </interface>
+ </protocol>
+diff --git a/src/outputs.c b/src/outputs.c
+index 024a686..70cdf47 100644
+--- a/src/outputs.c
++++ b/src/outputs.c
+@@ -21,6 +21,8 @@
+ #include <fcntl.h>
+ #include <unistd.h>
+ 
++#include <glib.h>
++
+ #include "wdisplays.h"
+ 
+ #include "wlr-output-management-unstable-v1-client-protocol.h"
+@@ -47,10 +49,97 @@ static void destroy_pending(struct wd_pending_config *pending) {
+   free(pending);
+ }
+ 
++static void json_append_escaped(GString *buf, const char *s) {
++  g_string_append_c(buf, '"');
++  for (const unsigned char *p = (const unsigned char *)(s ? s : ""); *p; p++) {
++    switch (*p) {
++      case '"': g_string_append(buf, "\\\""); break;
++      case '\\': g_string_append(buf, "\\\\"); break;
++      case '\n': g_string_append(buf, "\\n"); break;
++      case '\r': g_string_append(buf, "\\r"); break;
++      case '\t': g_string_append(buf, "\\t"); break;
++      default:
++        if (*p < 0x20) {
++          g_string_append_printf(buf, "\\u%04x", *p);
++        } else {
++          g_string_append_c(buf, (char)*p);
++        }
++    }
++  }
++  g_string_append_c(buf, '"');
++}
++
++// Vuelca la disposición recién aplicada a un JSON temporal y se lo pasa a
++// caelestia-save-layout, que lo persiste en ~/.config/caelestia/output-layouts.json
++// indexado por identidad (make/model/serial/tamaño físico) para que
++// caelestia-auto-scale pueda restaurarla en futuros arranques/hotplugs,
++// incluso si el nombre del conector cambia entre máquinas.
++static void wd_persist_layout(struct wl_list *outputs) {
++  GString *buf = g_string_new("[");
++  bool first = true;
++  struct wd_head_config *output;
++  wl_list_for_each(output, outputs, link) {
++    struct wd_head *head = output->head;
++    if (!first) {
++      g_string_append_c(buf, ',');
++    }
++    first = false;
++    g_string_append(buf, "{\"make\":");
++    json_append_escaped(buf, head->make);
++    g_string_append(buf, ",\"model\":");
++    json_append_escaped(buf, head->model);
++    g_string_append(buf, ",\"serial\":");
++    json_append_escaped(buf, head->serial);
++    g_string_append_printf(buf,
++        ",\"phys_width\":%d,\"phys_height\":%d"
++        ",\"enabled\":%s,\"width\":%d,\"height\":%d,\"refresh_mhz\":%d"
++        ",\"x\":%d,\"y\":%d,\"scale\":%f,\"transform\":%d}",
++        head->phys_width, head->phys_height,
++        output->enabled ? "true" : "false",
++        output->width, output->height, output->refresh,
++        output->x, output->y, output->scale, (int)output->transform);
++  }
++  g_string_append_c(buf, ']');
++
++  GError *error = NULL;
++  gchar *path = NULL;
++  gint fd = g_file_open_tmp("wdisplays-apply-XXXXXX.json", &path, &error);
++  if (fd < 0) {
++    fprintf(stderr, "wdisplays: no se pudo crear fichero temporal para guardar layout: %s\n",
++        error ? error->message : "?");
++    g_clear_error(&error);
++    g_string_free(buf, TRUE);
++    return;
++  }
++  ssize_t written = write(fd, buf->str, buf->len);
++  close(fd);
++  bool ok = written >= 0 && (gsize)written == buf->len;
++  g_string_free(buf, TRUE);
++  if (!ok) {
++    fprintf(stderr, "wdisplays: fallo escribiendo layout temporal\n");
++    unlink(path);
++    g_free(path);
++    return;
++  }
++
++  gchar *argv[] = {"caelestia-save-layout", path, NULL};
++  GError *spawn_error = NULL;
++  if (!g_spawn_async(NULL, argv, NULL,
++      G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
++      NULL, NULL, NULL, &spawn_error)) {
++    fprintf(stderr, "wdisplays: no se pudo lanzar caelestia-save-layout: %s\n",
++        spawn_error ? spawn_error->message : "?");
++    g_clear_error(&spawn_error);
++    unlink(path);
++  }
++  g_free(path);
++}
++
+ static void config_handle_succeeded(void *data,
+     struct zwlr_output_configuration_v1 *config) {
+   struct wd_pending_config *pending = data;
+   zwlr_output_configuration_v1_destroy(config);
++  wd_persist_layout(pending->outputs);
+   wd_ui_apply_done(pending->state, pending->outputs);
+   destroy_pending(pending);
+ }
+@@ -337,6 +426,9 @@ static void wd_head_destroy(struct wd_head *head) {
+   zwlr_output_head_v1_destroy(head->wlr_head);
+   free(head->name);
+   free(head->description);
++  free(head->make);
++  free(head->model);
++  free(head->serial);
+   free(head);
+ }
+ 
+@@ -387,6 +479,27 @@ static void head_handle_description(void *data,
+   wd_ui_reset_head(head, WD_FIELD_DESCRIPTION);
+ }
+ 
++static void head_handle_make(void *data,
++    struct zwlr_output_head_v1 *wlr_head, const char *make) {
++  struct wd_head *head = data;
++  free(head->make);
++  head->make = strdup(make);
++}
++
++static void head_handle_model(void *data,
++    struct zwlr_output_head_v1 *wlr_head, const char *model) {
++  struct wd_head *head = data;
++  free(head->model);
++  head->model = strdup(model);
++}
++
++static void head_handle_serial_number(void *data,
++    struct zwlr_output_head_v1 *wlr_head, const char *serial) {
++  struct wd_head *head = data;
++  free(head->serial);
++  head->serial = strdup(serial);
++}
++
+ static void head_handle_physical_size(void *data,
+     struct zwlr_output_head_v1 *wlr_head, int32_t width, int32_t height) {
+   struct wd_head *head = data;
+@@ -486,6 +599,9 @@ static const struct zwlr_output_head_v1_listener head_listener = {
+   .transform = head_handle_transform,
+   .scale = head_handle_scale,
+   .finished = head_handle_finished,
++  .make = head_handle_make,
++  .model = head_handle_model,
++  .serial_number = head_handle_serial_number,
+ };
+ 
+ static void output_manager_handle_head(void *data,
+@@ -534,7 +650,7 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
+ 
+   if (strcmp(interface, zwlr_output_manager_v1_interface.name) == 0) {
+     state->output_manager = wl_registry_bind(registry, name,
+-        &zwlr_output_manager_v1_interface, 1);
++        &zwlr_output_manager_v1_interface, version < 2 ? version : 2);
+     zwlr_output_manager_v1_add_listener(state->output_manager,
+         &output_manager_listener, state);
+   } else if (strcmp(interface, zxdg_output_manager_v1_interface.name) == 0) {
+diff --git a/src/wdisplays.h b/src/wdisplays.h
+index 4824017..dd11ea2 100644
+--- a/src/wdisplays.h
++++ b/src/wdisplays.h
+@@ -105,6 +105,7 @@ struct wd_head {
+ 
+   uint32_t id;
+   char *name, *description;
++  char *make, *model, *serial; // NULL if compositor doesn't support head v2
+   int32_t phys_width, phys_height; // mm
+   struct wl_list modes;
+ 

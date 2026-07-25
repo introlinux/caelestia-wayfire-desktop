@@ -20,6 +20,12 @@ escala de un panel concreto si el heurístico se equivoca; tiene prioridad
 sobre el cálculo por DPI. La clave identifica el panel por EDID, no por
 conector, así que sigue siendo portable entre máquinas.
 
+Si hay un layout guardado en `~/.config/caelestia/output-layouts.json` para
+la identidad del panel (mismo formato de clave), tiene prioridad sobre todo
+lo anterior y se restaura modo+posición+transform+escala completos en vez de
+solo la escala. Ese fichero lo escribe `caelestia-save-layout`, invocado por
+un wdisplays parcheado cada vez que aplicas cambios ahí visualmente.
+
 Pasada inicial al arrancar + reconciliación en cada `output-added` (docking
 en caliente), vía conexión IPC persistente a ipc-rules (mismo patrón que
 caelestia-ws-watch). Log en /tmp/caelestia-autoscale.log.
@@ -35,7 +41,19 @@ import sys
 import time
 
 OVERRIDES_PATH = os.path.expanduser('~/.config/caelestia/auto-scale-overrides.json')
+LAYOUTS_PATH = os.path.expanduser('~/.config/caelestia/output-layouts.json')
 LOG_PATH = '/tmp/caelestia-autoscale.log'
+
+TRANSFORM_NAMES = {
+    0: 'normal',
+    1: '90',
+    2: '180',
+    3: '270',
+    4: 'flipped',
+    5: 'flipped-90',
+    6: 'flipped-180',
+    7: 'flipped-270',
+}
 
 # DPI físico (diagonal) a partir del cual se usa cada escala entera.
 # El corte de 3x va alto a propósito: un panel de portátil HiDPI típico
@@ -94,6 +112,31 @@ def load_overrides():
         return {}
 
 
+def load_layouts():
+    try:
+        with open(LAYOUTS_PATH) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+
+
+def layout_matches_current(o, layout):
+    mode = next((m for m in o.get('modes', []) if m.get('current')), None)
+    if not mode:
+        return False
+    pos = o.get('position') or {}
+    target_hz = layout.get('refresh_mhz', 0) / 1000.0
+    return (
+        mode.get('width') == layout.get('width') and
+        mode.get('height') == layout.get('height') and
+        abs(mode.get('refresh', 0) - target_hz) < 0.05 and
+        pos.get('x') == layout.get('x') and
+        pos.get('y') == layout.get('y') and
+        abs((o.get('scale') or 1.0) - layout.get('scale', 1.0)) < 0.01 and
+        o.get('transform') == TRANSFORM_NAMES.get(layout.get('transform', 0), 'normal')
+    )
+
+
 def pick_scale(dpi):
     for threshold, scale in SCALE_THRESHOLDS:
         if dpi >= threshold:
@@ -131,8 +174,24 @@ def apply_scale(name, scale, reason):
         log(f"{name}: wlr-randr falló (exit {proc.returncode}): {proc.stderr.strip()}")
 
 
+def apply_layout(name, layout, reason):
+    hz = layout.get('refresh_mhz', 0) / 1000.0
+    transform = TRANSFORM_NAMES.get(layout.get('transform', 0), 'normal')
+    log(f"{name}: restaurando layout {layout['width']}x{layout['height']}@{hz:.3f}Hz "
+        f"pos {layout['x']},{layout['y']} scale {layout['scale']} transform {transform} ({reason})")
+    proc = subprocess.run(['wlr-randr', '--output', name,
+                           '--mode', f"{layout['width']}x{layout['height']}@{hz:.6f}Hz",
+                           '--pos', f"{layout['x']},{layout['y']}",
+                           '--transform', transform,
+                           '--scale', f"{layout['scale']:.6f}"],
+                          capture_output=True, text=True, timeout=5)
+    if proc.returncode != 0:
+        log(f"{name}: wlr-randr falló restaurando layout (exit {proc.returncode}): {proc.stderr.strip()}")
+
+
 def reconcile():
     overrides = load_overrides()
+    layouts = load_layouts()
     try:
         outputs = wlr_randr_outputs()
     except (subprocess.SubprocessError, json.JSONDecodeError, OSError, ValueError) as e:
@@ -142,6 +201,15 @@ def reconcile():
     for o in outputs:
         if not o.get('enabled') or not o.get('name'):
             continue
+
+        layout = layouts.get(identity_key(o))
+        if layout and layout.get('enabled', True):
+            if layout_matches_current(o, layout):
+                log(f"{o['name']}: ya coincide con el layout guardado, sin cambios")
+            else:
+                apply_layout(o['name'], layout, f"layout guardado para {identity_key(o)!r}")
+            continue
+
         current = o.get('scale') or 1.0
         target, reason = compute_scale(o, overrides)
         if abs(current - target) > 0.01:

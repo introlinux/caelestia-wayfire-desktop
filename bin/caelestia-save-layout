@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Recibe un JSON temporal volcado por el wdisplays parcheado tras un Apply
+exitoso (modo, posición, transform, escala de cada head) y lo persiste en
+~/.config/caelestia/output-layouts.json, indexado por identidad de panel
+(make|model|serial|WxHmm, mismo formato que identity_key() en
+caelestia-auto-scale) para que ese script pueda restaurar el layout completo
+en futuros arranques u hotplugs, incluso si el nombre del conector cambia
+entre máquinas. Borra el temporal al terminar, lo haya podido leer o no.
+"""
+import json
+import os
+import sys
+import time
+
+LAYOUTS_PATH = os.path.expanduser('~/.config/caelestia/output-layouts.json')
+LOG_PATH = '/tmp/caelestia-autoscale.log'
+
+
+def log(msg):
+    try:
+        with open(LOG_PATH, 'a') as f:
+            f.write(time.strftime('%H:%M:%S ') + 'save-layout: ' + msg + '\n')
+    except OSError:
+        pass
+
+
+def identity_key(o):
+    make = (o.get('make') or '').strip()
+    model = (o.get('model') or '').strip()
+    serial = (o.get('serial') or '').strip()
+    return f"{make}|{model}|{serial}|{o.get('phys_width', 0)}x{o.get('phys_height', 0)}"
+
+
+def main():
+    if len(sys.argv) != 2:
+        log("uso: caelestia-save-layout <tmp.json>")
+        return 1
+
+    tmp_path = sys.argv[1]
+    try:
+        with open(tmp_path) as f:
+            entries = json.load(f)
+    except (OSError, json.JSONDecodeError, ValueError) as e:
+        log(f"no se pudo leer {tmp_path}: {e}")
+        return 1
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    try:
+        with open(LAYOUTS_PATH) as f:
+            layouts = json.load(f)
+    except (OSError, json.JSONDecodeError, ValueError):
+        layouts = {}
+
+    saved = []
+    skipped = 0
+    for o in entries:
+        if not (o.get('make') or o.get('model') or o.get('serial')):
+            skipped += 1  # sin identidad fiable (EDID sin make/model/serial), no persiste
+            continue
+        key = identity_key(o)
+        layouts[key] = {
+            'enabled': bool(o.get('enabled')),
+            'width': o.get('width', 0),
+            'height': o.get('height', 0),
+            'refresh_mhz': o.get('refresh_mhz', 0),
+            'x': o.get('x', 0),
+            'y': o.get('y', 0),
+            'scale': o.get('scale', 1.0),
+            'transform': o.get('transform', 0),
+        }
+        saved.append(key)
+
+    os.makedirs(os.path.dirname(LAYOUTS_PATH), exist_ok=True)
+    tmp_out = LAYOUTS_PATH + '.tmp'
+    with open(tmp_out, 'w') as f:
+        json.dump(layouts, f, indent=2, sort_keys=True)
+    os.replace(tmp_out, LAYOUTS_PATH)
+    log(f"guardadas {len(saved)} identidades ({skipped} sin identidad fiable): {saved}")
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

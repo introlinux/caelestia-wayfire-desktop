@@ -95,6 +95,7 @@ izquierda; acepta arrastrar y soltar archivos sobre sus herramientas.
 - [caelestia-dots/shell](https://github.com/caelestia-dots/shell) — el shell original (GPLv3)
 - [Quickshell](https://quickshell.outfoxxed.me/) — runtime QML para Wayland
 - [Wayfire](https://wayfire.org/) — compositor
+- [wdisplays](https://github.com/artizirk/wdisplays) — configurador visual de pantallas, parcheado con `patches/wdisplays-save-layout.patch` para que persista el layout aplicado (ver `bin/caelestia-save-layout` y `bin/caelestia-auto-scale`)
 - [gpu-screen-recorder](https://git.dec05eba.com/gpu-screen-recorder/about/) — dec05eba
 - [Oneko-Rust-Arch](https://github.com/Abishek-Pechiappan/Oneko-Rust-Arch) — oneko para Wayland (GPLv3), portado a Wayfire con `patches/oneko-rust-wayfire.patch`; binario x86_64 precompilado en `prebuilt/` (receta de compilación comentada en `install.sh`)
 - [nerd-fonts](https://github.com/ryanoasis/nerd-fonts) — CaskaydiaCove
