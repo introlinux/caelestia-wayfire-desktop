@@ -64,23 +64,32 @@ CustomMouseArea {
         return x > width - Config.border.minThickness - panelWidth && withinPanelHeight(panels.osdWrapper, x, y);
     }
 
+    // Borde superior de la zona de hover de un panel inferior: los últimos
+    // píxeles del marco mientras está oculto (disparo solo-borde, no toda la
+    // esquina redondeada) y el borde real del panel una vez abierto.
+    //
+    // Calcularlo como `height - minThickness - panel.height` dejaba muertos los
+    // `borderThickness - minThickness` píxeles de arriba del panel abierto (9 en
+    // esta config): el ratón entraba ahí, el código creía que estaba fuera y
+    // cerraba. Se notaba sobre todo en el carrusel de fondos, cuyas miniaturas
+    // están justo pegadas al borde de arriba.
+    function bottomPanelTop(panel: Item): real {
+        if ((panel.offsetScale ?? 1) < 1) // qmllint disable missing-property
+            return panel.y + borderThickness;
+        return height - Config.border.minThickness;
+    }
+
     function inMiniAppsArea(x: real, y: real): bool {
         const p = panels.miniapps;
-        const panelHeight = (p.offsetScale ?? 1) < 1 ? p.height : 0; // qmllint disable missing-property
-        return y > height - Config.border.minThickness - panelHeight && x > bar.implicitWidth && x < bar.implicitWidth + p.x + p.width + Config.border.rounding;
+        return y >= bottomPanelTop(p) && x > bar.implicitWidth && x < bar.implicitWidth + p.x + p.width + Config.border.rounding;
     }
 
     function inLauncherArea(x: real, y: real): bool {
-        const panelHeight = (panels.launcher.offsetScale ?? 1) < 1 ? panels.launcher.height : 0; // qmllint disable missing-property
-        return y > height - Config.border.minThickness - panelHeight && withinPanelWidth(panels.launcher, x, y);
+        return y >= bottomPanelTop(panels.launcher) && withinPanelWidth(panels.launcher, x, y);
     }
 
-    // Edge-only trigger when hidden (last pixels of the frame, not the whole
-    // rounded corner); full panel size once open — same pattern as the OSD
-    // and the launcher.
     function inUtilitiesArea(x: real, y: real): bool {
-        const panelHeight = (panels.utilities.offsetScale ?? 1) < 1 ? panels.utilities.height : 0; // qmllint disable missing-property
-        return y > height - Config.border.minThickness - panelHeight && withinPanelWidth(panels.utilities, x, y);
+        return y >= bottomPanelTop(panels.utilities) && withinPanelWidth(panels.utilities, x, y);
     }
 
     function onWheel(event: WheelEvent): void {

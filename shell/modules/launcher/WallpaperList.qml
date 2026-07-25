@@ -4,6 +4,7 @@ import "items"
 import QtQuick
 import Quickshell
 import Caelestia.Config
+import qs.components
 import qs.components.controls
 import qs.services
 
@@ -16,6 +17,9 @@ PathView {
     required property var content
 
     readonly property int itemWidth: Tokens.sizes.launcher.wallpaperWidth * 0.8 + Tokens.padding.larger * 2
+
+    // Deltas de rueda pendientes de completar una muesca
+    property int wheelAccumulated: 0
 
     readonly property int numItems: {
         const screen = (QsWindow.window as QsWindow)?.screen;
@@ -72,6 +76,121 @@ PathView {
 
     delegate: WallpaperItem {
         visibilities: root.visibilities
+    }
+
+    // La rueda y el hover de las zonas laterales tienen que capturarse por
+    // encima de las miniaturas: cada delegado lleva su propio StateLayer, que es
+    // un MouseArea y se queda con los eventos. Todos estos van con
+    // `acceptedButtons: Qt.NoButton`, así que los clics siguen bajando hasta la
+    // miniatura y solo interceptan lo que les toca.
+
+    // Desplazamiento horizontal de dos dedos (o rueda) para recorrer el carrusel
+    MouseArea {
+        anchors.fill: parent
+        z: 100
+
+        acceptedButtons: Qt.NoButton
+
+        onWheel: event => {
+            const d = event.angleDelta;
+            const delta = Math.abs(d.x) > Math.abs(d.y) ? d.x : d.y;
+            if (delta === 0)
+                return;
+
+            // El touchpad manda muchos deltas pequeños: se acumulan hasta
+            // completar una muesca (mismo criterio que CustomMouseArea)
+            if (Math.sign(delta) !== Math.sign(root.wheelAccumulated))
+                root.wheelAccumulated = 0;
+            root.wheelAccumulated += delta;
+
+            while (root.wheelAccumulated >= 120) {
+                root.decrementCurrentIndex();
+                root.wheelAccumulated -= 120;
+            }
+            while (root.wheelAccumulated <= -120) {
+                root.incrementCurrentIndex();
+                root.wheelAccumulated += 120;
+            }
+        }
+    }
+
+    ScrollZone {
+        step: -1
+        anchors.left: parent.left
+    }
+
+    ScrollZone {
+        step: 1
+        anchors.right: parent.right
+    }
+
+    // Franja en un lateral que avanza el carrusel mientras el ratón está encima.
+    // Vive dentro del panel a propósito: salir del panel lo cierra, como en
+    // cualquier otro drawer, así que la navegación tiene que quedar dentro.
+    component ScrollZone: MouseArea {
+        id: zone
+
+        required property int step
+
+        function scroll(): void {
+            if (zone.step < 0)
+                root.decrementCurrentIndex();
+            else
+                root.incrementCurrentIndex();
+        }
+
+        width: Math.round(root.itemWidth / 3)
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        z: 99
+
+        hoverEnabled: true
+        acceptedButtons: Qt.NoButton
+        cursorShape: Qt.PointingHandCursor
+
+        onContainsMouseChanged: {
+            if (containsMouse) {
+                initialDelay.restart();
+            } else {
+                initialDelay.stop();
+                autoScroll.stop();
+            }
+        }
+
+        // Un retardo antes del primer paso evita que el carrusel se dispare solo
+        // al pasar de largo camino de una miniatura del borde
+        Timer {
+            id: initialDelay
+
+            interval: 250
+            onTriggered: {
+                zone.scroll();
+                autoScroll.start();
+            }
+        }
+
+        Timer {
+            id: autoScroll
+
+            interval: 400
+            repeat: true
+            onTriggered: zone.scroll()
+        }
+
+        MaterialIcon {
+            anchors.centerIn: parent
+
+            text: zone.step < 0 ? "chevron_left" : "chevron_right"
+            color: Colours.palette.m3onSurfaceVariant
+            font.pointSize: Tokens.font.size.extraLarge
+            font.weight: 600
+
+            opacity: zone.containsMouse ? 1 : 0
+
+            Behavior on opacity {
+                Anim {}
+            }
+        }
     }
 
     path: Path {
