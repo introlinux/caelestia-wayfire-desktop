@@ -417,6 +417,22 @@ if ! sudo visudo -cf /etc/sudoers.d/caelestia-inputosd >/dev/null; then
     warn "Regla sudoers inválida — el OSD de entrada no tendrá permisos"
 fi
 
+# En las Intel antiguas (gen6/gen7) el uso de GPU no se puede leer por fdinfo:
+# el driver no publica contadores por motor, y la única vía es el PMU de i915.
+# Sus eventos son de ámbito de CPU, que el kernel deniega con
+# perf_event_paranoid >= 1 (Ubuntu trae 4). Bajarlo permite a cualquier proceso
+# del equipo leer contadores de rendimiento, así que solo se toca donde sirve
+# de algo: si no hay PMU de Intel (equipos NVIDIA/AMD) no se escribe nada.
+if compgen -G "/sys/devices/i915*/events/*-busy" >/dev/null 2>&1 ||
+   compgen -G "/sys/devices/xe*/events/*-busy" >/dev/null 2>&1; then
+    log "Permitiendo la lectura del PMU de la GPU (perf_event_paranoid=0)"
+    printf '# Uso de GPU Intel en el dashboard: el PMU de i915 usa eventos de\n# ámbito de CPU, denegados con perf_event_paranoid >= 1.\nkernel.perf_event_paranoid = 0\n' \
+        | sudo tee /etc/sysctl.d/99-caelestia-perf.conf >/dev/null
+    sudo sysctl -q --system 2>/dev/null || sudo sysctl -q kernel.perf_event_paranoid=0
+else
+    log "Sin PMU de GPU Intel — no se toca perf_event_paranoid"
+fi
+
 # Las apps gráficas lanzadas con sudo (gparted, synaptic...) pierden el tema y
 # tamaño del cursor al limpiarse el entorno; conservamos solo esas dos vars.
 log "Instalando regla sudoers del cursor (env_keep XCURSOR_*)"
@@ -542,6 +558,16 @@ command -v caelestia >/dev/null || { warn "CLI caelestia no encontrada"; ok=0; }
 python3 -c "import caelestia.utils.wallpaper as w; raise SystemExit(0 if hasattr(w, 'VIDEO_EXTENSIONS') else 1)" 2>/dev/null \
     || { warn "CLI caelestia sin el parche de fondos animados (los vídeos no funcionarán como fondo)"; ok=0; }
 [ -x "$HOME/.local/bin/caelestia-window-watch" ] || { warn "Falta caelestia-window-watch (el fondo animado no se auto-pausará)"; ok=0; }
+# El uso de GPU es informativo, no rompe nada: se avisa sin tocar $ok.
+if [ -x "$HOME/.local/bin/caelestia-gpu-stats" ] &&
+   "$HOME/.local/bin/caelestia-gpu-stats" 2>/dev/null | grep -q '"usage": *null'; then
+    paranoid=$(cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null || echo "?")
+    if [ "$paranoid" != "0" ] && [ "$paranoid" != "-1" ]; then
+        warn "El dashboard mostrará \"—\" en el uso de GPU: perf_event_paranoid=$paranoid lo impide (hace falta 0)"
+    else
+        warn "El dashboard mostrará \"—\" en el uso de GPU: este driver no expone la métrica"
+    fi
+fi
 [ -d /usr/lib/qt6/qml/Caelestia ] || { warn "Plugin QML Caelestia no instalado"; ok=0; }
 [ -x "$HOME/.local/bin/caelestia-wayfire-start" ] || { warn "Falta caelestia-wayfire-start"; ok=0; }
 
