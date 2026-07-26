@@ -4,16 +4,130 @@
 # usage/temp son null cuando el driver no expone esa métrica (la UI muestra "—").
 # Backends: nvidia-smi (propietario), amdgpu (sysfs), i915/xe (fdinfo DRM
 # muestreado ~350ms, solo ve clientes del propio usuario), nouveau (hwmon).
+# En Intel, si fdinfo no expone contadores por motor (gen6/gen7 y kernels
+# antiguos no lo hacen), se recurre al PMU de i915 vía perf. Ese respaldo solo
+# entra cuando fdinfo no ha dado nada: las máquinas donde fdinfo ya funciona
+# siguen exactamente igual.
 
+import ctypes
 import glob
 import json
 import os
+import platform
 import re
+import struct
 import subprocess
 import sys
 import time
 
 SAMPLE_MS = 350
+
+# __NR_perf_event_open, que es específico de cada arquitectura
+PERF_EVENT_OPEN_NR = {
+    "x86_64": 298,
+    "aarch64": 241,
+    "i686": 336,
+    "armv7l": 364,
+}
+
+
+def perf_event_open(pmu_type, config, cpu):
+    """fd de un contador perf, o None si el kernel lo deniega.
+
+    Con kernel.perf_event_paranoid >= 3 esto devuelve EACCES para un usuario
+    normal; ahí simplemente no hay métrica y se informa null.
+    """
+    nr = PERF_EVENT_OPEN_NR.get(platform.machine())
+    if nr is None:
+        return None
+
+    try:
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        libc.syscall.restype = ctypes.c_int
+        libc.syscall.argtypes = [ctypes.c_long, ctypes.c_void_p,
+                                 ctypes.c_int, ctypes.c_int,
+                                 ctypes.c_int, ctypes.c_ulong]
+    except OSError:
+        return None
+
+    # struct perf_event_attr: type @0, size @4, config @8. El resto a cero
+    # deja el contador habilitado y contando desde ya.
+    attr = bytearray(128)
+    struct.pack_into("<IIQ", attr, 0, pmu_type, 128, config)
+    buf = (ctypes.c_char * 128).from_buffer(attr)
+
+    fd = libc.syscall(nr, ctypes.byref(buf), -1, cpu, -1, 0)
+    return fd if fd >= 0 else None
+
+
+def pmu_dir(driver, pdev):
+    """Directorio sysfs del PMU: i915_0000_00_02_0 con varias GPUs, i915 si hay una."""
+    slug = pdev.replace(":", "_").replace(".", "_")
+    for candidate in (f"/sys/devices/{driver}_{slug}", f"/sys/devices/{driver}"):
+        if os.path.isdir(os.path.join(candidate, "events")):
+            return candidate
+    return None
+
+
+def pmu_open_busy(driver, pdev):
+    """Abre un contador por motor (rcs/bcs/vcs/vecs). [(nombre, fd)] o []."""
+    base = pmu_dir(driver, pdev)
+    if base is None:
+        return []
+
+    pmu_type = read_int(os.path.join(base, "type"))
+    if pmu_type is None:
+        return []
+
+    cpumask = read(os.path.join(base, "cpumask")) or "0"
+    try:
+        cpu = int(cpumask.split(",")[0].split("-")[0])
+    except ValueError:
+        cpu = 0
+
+    counters = []
+    events = os.path.join(base, "events")
+    for name in sorted(os.listdir(events)):
+        if not name.endswith("-busy"):
+            continue
+        spec = read(os.path.join(events, name))
+        if not spec or not spec.startswith("config="):
+            continue
+        try:
+            config = int(spec.split("=", 1)[1].strip(), 0)
+        except ValueError:
+            continue
+        fd = perf_event_open(pmu_type, config, cpu)
+        if fd is not None:
+            counters.append((name, fd))
+
+    return counters
+
+
+def pmu_read(counters):
+    """{motor: nanosegundos ocupados acumulados}."""
+    values = {}
+    for name, fd in counters:
+        try:
+            # Sin lseek: un fd de perf no es buscable (ESPIPE) y cada read()
+            # devuelve ya el valor actual del contador.
+            raw = os.read(fd, 8)
+        except OSError:
+            continue
+        if len(raw) == 8:
+            values[name] = struct.unpack("<Q", raw)[0]
+    return values
+
+
+def pmu_busy(before, after, dt_ns):
+    """% de uso: el motor más ocupado, igual criterio que con fdinfo."""
+    if not before or not after or dt_ns <= 0:
+        return None
+    deltas = [after[k] - before[k] for k in after if k in before]
+    deltas = [d for d in deltas if d >= 0]
+    if not deltas:
+        return None
+    return min(100.0, max(deltas) * 100.0 / dt_ns)
 
 
 def read(path):
@@ -159,8 +273,13 @@ def fdinfo_busy(driver, pdev, before, after, dt_ns):
             delta = ns - prev.get(engine, ns)
             if delta > 0:
                 totals[engine] = totals.get(engine, 0) + delta
-    if not totals or dt_ns <= 0:
-        return 0.0
+    if dt_ns <= 0:
+        return None
+    if not totals:
+        # No drm-engine-* counters at all means the driver does not expose
+        # per-client busyness (i915 on gen6/gen7, for one). Reporting 0.0 here
+        # would render as a permanent, believable "0%"; None renders as "—".
+        return None
     return min(100.0, max(totals.values()) * 100.0 / dt_ns)
 
 
@@ -195,14 +314,29 @@ def main():
         gpus.append(entry)
 
     if fdinfo_cards:
+        # Los contadores del PMU se abren antes del muestreo para compartir la
+        # misma ventana que fdinfo y no duplicar el tiempo de ejecución.
+        pmu = {idx: pmu_open_busy(drv, pdev) for idx, drv, pdev in fdinfo_cards}
+        pmu = {idx: c for idx, c in pmu.items() if c}
+
         before = {(d, p): drm_engine_sample(d, p) for _, d, p in fdinfo_cards}
+        pmu_before = {idx: pmu_read(c) for idx, c in pmu.items()}
         t0 = time.monotonic_ns()
         time.sleep(SAMPLE_MS / 1000)
         dt = time.monotonic_ns() - t0
         for idx, drv, pdev in fdinfo_cards:
             after = drm_engine_sample(drv, pdev)
-            gpus[idx]["usage"] = round(
-                fdinfo_busy(drv, pdev, before[(drv, pdev)], after, dt), 1)
+            busy = fdinfo_busy(drv, pdev, before[(drv, pdev)], after, dt)
+            if busy is None and idx in pmu:
+                busy = pmu_busy(pmu_before[idx], pmu_read(pmu[idx]), dt)
+            gpus[idx]["usage"] = round(busy, 1) if busy is not None else None
+
+        for counters in pmu.values():
+            for _, fd in counters:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
 
     json.dump(gpus, sys.stdout)
     print()
