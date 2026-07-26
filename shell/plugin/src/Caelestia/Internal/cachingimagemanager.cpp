@@ -8,6 +8,7 @@
 #include <qimagereader.h>
 #include <qloggingcategory.h>
 #include <qpainter.h>
+#include <qscopeguard.h>
 #include <qtconcurrentrun.h>
 
 Q_LOGGING_CATEGORY(lcCim, "caelestia.internal.cim", QtInfoMsg)
@@ -106,9 +107,26 @@ void CachingImageManager::updateSource(const QString& path) {
         return;
     }
 
+    // Hashing before the item has been laid out is wasted work: the size is
+    // needed to build the cache filename. The width/height change that follows
+    // layout calls back in here.
+    if (const QSize size = effectiveSize(); !m_item || !size.width() || !size.height()) {
+        return;
+    }
+
     m_shaPath = path;
 
     QtConcurrent::run(&CachingImageManager::sha256sum, path).then(this, [path, this](const QString& sha) {
+        // Release the in-flight marker on every exit. Leaving it set makes each
+        // later updateSource() for this path hit the guard above and return, so
+        // the image would never load at all -- which is what happened to items
+        // whose sha finished before their delegate had been sized.
+        const auto releaseShaPath = qScopeGuard([path, this] {
+            if (m_shaPath == path) {
+                m_shaPath = QString();
+            }
+        });
+
         if (m_path != path) {
             return;
         }
@@ -145,11 +163,6 @@ void CachingImageManager::updateSource(const QString& path) {
         } else {
             m_item->setProperty("source", QUrl::fromLocalFile(path));
             createCache(path, cache.toLocalFile(), fillMode, size);
-        }
-
-        // Clear current running sha if same
-        if (m_shaPath == path) {
-            m_shaPath = QString();
         }
     });
 }
