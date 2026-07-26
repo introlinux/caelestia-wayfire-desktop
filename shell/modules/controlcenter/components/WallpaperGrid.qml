@@ -33,11 +33,20 @@ GridView {
         required property var modelData
         required property int index
         readonly property bool isCurrent: modelData && modelData.path === Wallpapers.actualCurrent
+        readonly property bool isAnimated: modelData && Wallpapers.isVideo(modelData.path)
         readonly property real itemMargin: Tokens.spacing.normal / 2
         readonly property real itemRadius: Tokens.rounding.normal
 
+        readonly property string thumbPath: Wallpapers.videoThumbs[modelData.path] ?? ""
+        readonly property string displayPath: isAnimated ? thumbPath : modelData.path
+
         width: root.cellWidth
         height: root.cellHeight
+
+        Component.onCompleted: {
+            if (isAnimated)
+                Wallpapers.requestVideoThumb(modelData.path);
+        }
 
         StateLayer {
             onClicked: {
@@ -69,7 +78,7 @@ GridView {
             CachingImage {
                 id: cachingImage
 
-                path: modelData.path
+                path: displayPath
                 anchors.fill: parent
                 fillMode: Image.PreserveAspectCrop
                 cache: true
@@ -93,7 +102,7 @@ GridView {
                 id: fallbackImage
 
                 anchors.fill: parent
-                source: fallbackTimer.triggered && cachingImage.status !== Image.Ready ? modelData.path : ""
+                source: fallbackTimer.triggered && cachingImage.status !== Image.Ready ? displayPath : ""
                 asynchronous: true
                 fillMode: Image.PreserveAspectCrop
                 cache: true
@@ -120,6 +129,106 @@ GridView {
                 interval: 800
                 running: cachingImage.status === Image.Loading || cachingImage.status === Image.Null
                 onTriggered: triggered = true
+            }
+
+            // Filmstrip Top Border (film perforations)
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 10
+                color: Qt.rgba(0, 0, 0, 0.75)
+                visible: isAnimated
+                z: 2
+
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 6
+                    Repeater {
+                        model: Math.floor(root.cellWidth / 12)
+                        Rectangle {
+                            width: 5
+                            height: 4
+                            radius: 1
+                            color: Qt.rgba(1, 1, 1, 0.65)
+                        }
+                    }
+                }
+            }
+
+            // Filmstrip Bottom Border
+            Rectangle {
+                anchors.bottom: filenameOverlay.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 10
+                color: Qt.rgba(0, 0, 0, 0.75)
+                visible: isAnimated
+                z: 2
+
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 6
+                    Repeater {
+                        model: Math.floor(root.cellWidth / 12)
+                        Rectangle {
+                            width: 5
+                            height: 4
+                            radius: 1
+                            color: Qt.rgba(1, 1, 1, 0.65)
+                        }
+                    }
+                }
+            }
+
+            // Center Play Icon Overlay
+            Rectangle {
+                anchors.centerIn: parent
+                width: 36
+                height: 36
+                radius: 18
+                color: Qt.rgba(0, 0, 0, 0.55)
+                border.color: Qt.rgba(255, 255, 255, 0.6)
+                border.width: 1.5
+                visible: isAnimated
+                z: 3
+
+                MaterialIcon {
+                    anchors.centerIn: parent
+                    text: "play_arrow"
+                    color: "white"
+                    font.pointSize: Tokens.font.size.large
+                }
+            }
+
+            // Top-Left MP4 Pill Badge
+            StyledClippingRect {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.margins: Tokens.padding.small + 2
+                visible: isAnimated
+                color: Qt.rgba(Colours.palette.m3primary.r, Colours.palette.m3primary.g, Colours.palette.m3primary.b, 0.9)
+                radius: Tokens.rounding.full
+                implicitWidth: animRow.implicitWidth + Tokens.padding.small * 1.5
+                implicitHeight: animRow.implicitHeight + Tokens.padding.smaller
+                z: 4
+
+                Row {
+                    id: animRow
+                    anchors.centerIn: parent
+                    spacing: 3
+                    MaterialIcon {
+                        text: "videocam"
+                        color: Colours.palette.m3onPrimary
+                        font.pointSize: Tokens.font.size.smaller - 2
+                    }
+                    StyledText {
+                        text: "MP4"
+                        color: Colours.palette.m3onPrimary
+                        font.pointSize: Tokens.font.size.smaller - 2
+                        font.bold: true
+                    }
+                }
             }
 
             // Gradient overlay for filename

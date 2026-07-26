@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+"""Watch Wayfire window states (maximized, fullscreen, workspace focus) and print state.
+
+Prints COVERED:1 or COVERED:0 depending on whether the wallpaper is actually
+visible on the current workspace, so the animated wallpaper can pause itself.
+
+Two sockets are used on purpose: once a socket is subscribed to the event
+stream, a request/response exchange on it can read an event instead of its
+own reply and desync the protocol. Events go to one socket, queries to another.
+"""
+import sys, os, socket, json, struct, glob, ctypes, select, signal, stat
+
+PR_SET_PDEATHSIG = 1
+
+# A view has to miss the workarea by more than this to count as not covering it.
+COVER_TOLERANCE = 2
+
+
+def die_with_parent():
+    try:
+        ctypes.CDLL('libc.so.6').prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
+    except OSError:
+        pass
+
+
+def emit(text):
+    try:
+        print(text, flush=True)
+    except (BrokenPipeError, ValueError):
+        sys.exit(0)
+
+
+def recv_msg(s):
+    hdr = b''
+    while len(hdr) < 4:
+        chunk = s.recv(4 - len(hdr))
+        if not chunk:
+            return None
+        hdr += chunk
+    n = struct.unpack('<I', hdr)[0]
+    data = b''
+    while len(data) < n:
+        chunk = s.recv(n - len(data))
+        if not chunk:
+            return None
+        data += chunk
+    return json.loads(data)
+
+
+def send_msg(s, payload):
+    msg = json.dumps(payload).encode()
+    s.send(struct.pack('<I', len(msg)) + msg)
+
+
+def query(s, method):
+    send_msg(s, {'method': method})
+    return recv_msg(s)
+
+
+def connect(sock_path):
+    s = socket.socket(socket.AF_UNIX)
+    s.connect(sock_path)
+    return s
+
+
+def covers(view_geom, target, offset_x, offset_y):
+    """True if view_geom, moved into viewport-relative coords, covers target."""
+    x = view_geom.get('x', 0) - offset_x
+    y = view_geom.get('y', 0) - offset_y
+    right = x + view_geom.get('width', 0)
+    bottom = y + view_geom.get('height', 0)
+
+    t_x = target.get('x', 0)
+    t_y = target.get('y', 0)
+    t_right = t_x + target.get('width', 0)
+    t_bottom = t_y + target.get('height', 0)
+
+    return (x <= t_x + COVER_TOLERANCE and y <= t_y + COVER_TOLERANCE
+            and right >= t_right - COVER_TOLERANCE and bottom >= t_bottom - COVER_TOLERANCE)
+
+
+def on_viewport(view_geom, width, height, offset_x, offset_y):
+    """True if the view's centre falls in the current viewport.
+
+    Matches how Wayfire itself assigns a view to a workspace.
+    """
+    cx = view_geom.get('x', 0) + view_geom.get('width', 0) / 2 - offset_x
+    cy = view_geom.get('y', 0) + view_geom.get('height', 0) / 2 - offset_y
+    return 0 <= cx < width and 0 <= cy < height
+
+
+def output_is_covered(output, views):
+    geom = output.get('geometry', {})
+    width = geom.get('width', 0)
+    height = geom.get('height', 0)
+    if not width or not height:
+        return False
+
+    ws = output.get('workspace', {})
+    # Wayfire derives a view's workspace from its geometry, so the viewport for
+    # workspace (x, y) sits at (x * width, y * height) in output coordinates.
+    offset_x = ws.get('x', 0) * width
+    offset_y = ws.get('y', 0) * height
+
+    # A maximized window only reaches the workarea; the rest is under the bar,
+    # so the wallpaper is not actually visible there either.
+    workarea = output.get('workarea') or {'x': 0, 'y': 0, 'width': width, 'height': height}
+    full = {'x': 0, 'y': 0, 'width': width, 'height': height}
+
+    wset = output.get('wset-index')
+
+    for v in views:
+        if v.get('role') != 'toplevel' or not v.get('mapped') or v.get('minimized'):
+            continue
+        if wset is not None and v.get('wset-index') != wset:
+            continue
+
+        geom = v.get('geometry', {})
+        # Sticky views follow the viewport, so they are always on it.
+        if not v.get('sticky') and not on_viewport(geom, width, height, offset_x, offset_y):
+            continue
+
+        # Trust the compositor's own flags rather than re-deriving them from
+        # geometry: apps with size increments (terminals) maximize a few pixels
+        # short of the workarea and would never match a geometric test.
+        # tiled on all four edges is Wayfire's maximized state.
+        if v.get('fullscreen') or v.get('tiled-edges', 0) == 15:
+            return True
+
+        # Fall back to geometry for windows merely resized to cover everything.
+        if covers(geom, workarea, offset_x, offset_y) or covers(geom, full, offset_x, offset_y):
+            return True
+
+    return False
+
+
+def check_covered(s):
+    try:
+        outputs = query(s, 'window-rules/list-outputs')
+        views = query(s, 'window-rules/list-views')
+    except (OSError, ValueError):
+        return None
+
+    if not isinstance(outputs, list) or not outputs or not isinstance(views, list):
+        return None
+
+    # Only report covered when no output still shows the wallpaper, so a second
+    # monitor showing the desktop keeps the animation running.
+    return all(output_is_covered(o, views) for o in outputs)
+
+
+def main():
+    die_with_parent()
+
+    sock_path = os.environ.get('WAYFIRE_SOCKET', '')
+    if not sock_path:
+        sockets = glob.glob(f'/run/user/{os.getuid()}/wayfire*.socket')
+        if not sockets:
+            sys.exit(1)
+        sock_path = sockets[0]
+
+    events = connect(sock_path)
+    queries = connect(sock_path)
+
+    last = None
+
+    def publish():
+        nonlocal last
+        state = check_covered(queries)
+        if state is not None and state != last:
+            last = state
+            emit(f"COVERED:{1 if state else 0}")
+
+    publish()
+
+    send_msg(events, {
+        'method': 'window-rules/events/watch',
+        'data': {
+            # Names verified against window-rules/events/watch: Wayfire rejects
+            # the whole subscription if any single name is unknown.
+            'events': [
+                'wset-workspace-changed',
+                'view-workspace-changed',
+                'view-fullscreen',
+                'view-tiled',
+                'view-minimized',
+                'view-geometry-changed',
+                'view-focused',
+                'view-mapped',
+                'view-unmapped',
+                'view-set-output',
+                'view-wset-changed'
+            ]
+        }
+    })
+    recv_msg(events)
+
+    try:
+        watch_stdin = stat.S_ISFIFO(os.fstat(0).st_mode)
+    except OSError:
+        watch_stdin = False
+
+    while True:
+        ready, _, _ = select.select([events] + ([sys.stdin] if watch_stdin else []), [], [])
+        if watch_stdin and sys.stdin in ready and not os.read(0, 4096):
+            sys.exit(0)
+        if events not in ready:
+            continue
+
+        if recv_msg(events) is None:
+            sys.exit(0)
+
+        publish()
+
+
+if __name__ == '__main__':
+    main()

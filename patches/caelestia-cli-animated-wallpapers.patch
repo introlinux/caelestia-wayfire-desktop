@@ -1,0 +1,217 @@
+diff --git a/src/caelestia/parser.py b/src/caelestia/parser.py
+index aafa852..41e9414 100644
+--- a/src/caelestia/parser.py
++++ b/src/caelestia/parser.py
+@@ -90,6 +90,7 @@ def parse_args() -> tuple[argparse.ArgumentParser, argparse.Namespace]:
+     wallpaper_parser.add_argument(
+         "-p", "--print", nargs="?", const=get_wallpaper(), metavar="PATH", help="print the scheme for a wallpaper"
+     )
++    wallpaper_parser.add_argument("-T", "--thumb", help="get or generate thumbnail path for a wallpaper")
+     wallpaper_parser.add_argument(
+         "-r", "--random", nargs="?", const=wallpapers_dir, metavar="DIR", help="switch to a random wallpaper"
+     )
+diff --git a/src/caelestia/subcommands/wallpaper.py b/src/caelestia/subcommands/wallpaper.py
+index 940dcb5..2be90b6 100644
+--- a/src/caelestia/subcommands/wallpaper.py
++++ b/src/caelestia/subcommands/wallpaper.py
+@@ -1,7 +1,7 @@
+ import json
+ from argparse import Namespace
+ 
+-from caelestia.utils.wallpaper import get_colours_for_wall, get_wallpaper, set_random, set_wallpaper
++from caelestia.utils.wallpaper import get_colours_for_wall, get_thumb_for_wall, get_wallpaper, set_random, set_wallpaper
+ 
+ 
+ class Command:
+@@ -13,6 +13,8 @@ class Command:
+     def run(self) -> None:
+         if self.args.print:
+             print(json.dumps(get_colours_for_wall(self.args.print, self.args.no_smart)))
++        elif getattr(self.args, "thumb", None):
++            print(get_thumb_for_wall(self.args.thumb))
+         elif self.args.file:
+             set_wallpaper(self.args.file, self.args.no_smart)
+         elif self.args.random:
+diff --git a/src/caelestia/utils/wallpaper.py b/src/caelestia/utils/wallpaper.py
+index 02d3f4e..95bbd70 100644
+--- a/src/caelestia/utils/wallpaper.py
++++ b/src/caelestia/utils/wallpaper.py
+@@ -26,12 +26,24 @@ from caelestia.utils.scheme import Scheme, get_scheme
+ from caelestia.utils.theme import apply_colours
+ 
+ 
++VIDEO_EXTENSIONS = [".mp4", ".mkv", ".webm", ".mov", ".avi"]
++
++
+ def is_valid_image(path: Path) -> bool:
+-    return path.is_file() and path.suffix in [".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".gif"]
++    return path.is_file() and path.suffix.lower() in [
++        ".jpg",
++        ".jpeg",
++        ".png",
++        ".webp",
++        ".tif",
++        ".tiff",
++        ".gif",
++    ] + VIDEO_EXTENSIONS
+ 
+ 
+ def check_wall(wall: Path, filter_size: tuple[int, int], threshold: float) -> bool:
+-    with Image.open(wall) as img:
++    wall_cache = get_wall_cache(wall)
++    with Image.open(wall_cache) as img:
+         width, height = img.size
+         return width >= filter_size[0] * threshold and height >= filter_size[1] * threshold
+ 
+@@ -72,6 +84,21 @@ def get_thumb(wall: Path, cache: Path) -> Path:
+     return thumb
+ 
+ 
++def get_preview(wall: Path, cache: Path) -> Path:
++    # Display thumbnail for the wallpaper selector. Distinct from get_thumb,
++    # which is deliberately tiny + NEAREST because it only feeds materialyoucolor.
++    preview = cache / "preview.jpg"
++
++    if not preview.exists():
++        with Image.open(wall) as img:
++            img = img.convert("RGB")
++            img.thumbnail((640, 640), Image.Resampling.LANCZOS)
++            preview.parent.mkdir(parents=True, exist_ok=True)
++            img.save(preview, "JPEG", quality=90)
++
++    return preview
++
++
+ def get_smart_opts(wall: Path, cache: Path) -> dict:
+     opts_cache = cache / "smart.json"
+ 
+@@ -99,18 +126,64 @@ def get_smart_opts(wall: Path, cache: Path) -> dict:
+     return opts
+ 
+ 
++def convert_video(wall: Path) -> Path:
++    cache = wallpapers_cache_dir / compute_hash(wall)
++    output_path = cache / "first_frame.jpg"
++
++    if not output_path.exists():
++        output_path.parent.mkdir(parents=True, exist_ok=True)
++        subprocess.run(
++            ["ffmpeg", "-ss", "00:00:01", "-i", str(wall), "-vframes", "1", "-q:v", "2", str(output_path), "-y"],
++            stdout=subprocess.DEVNULL,
++            stderr=subprocess.DEVNULL,
++        )
++        if not output_path.exists():
++            subprocess.run(
++                ["ffmpeg", "-i", str(wall), "-vframes", "1", "-q:v", "2", str(output_path), "-y"],
++                stdout=subprocess.DEVNULL,
++                stderr=subprocess.DEVNULL,
++            )
++
++    return output_path if output_path.exists() else wall
++
++
++def convert_gif(wall: Path) -> Path:
++    cache = wallpapers_cache_dir / compute_hash(wall)
++    output_path = cache / "first_frame.png"
++
++    if not output_path.exists():
++        output_path.parent.mkdir(parents=True, exist_ok=True)
++        with Image.open(wall) as img:
++            try:
++                img.seek(0)
++            except EOFError:
++                pass
++
++            img = img.convert("RGB")
++            img.save(output_path, "PNG")
++
++    return output_path
++
++
++def get_wall_cache(wall: Path) -> Path:
++    ext = wall.suffix.lower()
++    if ext == ".gif":
++        return convert_gif(wall)
++    elif ext in VIDEO_EXTENSIONS:
++        return convert_video(wall)
++    return wall
++
++
+ def get_colours_for_wall(wall: Path | str, no_smart: bool) -> None:
+     wall = Path(wall)
+     scheme = get_scheme()
+-    cache = wallpapers_cache_dir / compute_hash(wall)
+-
+-    if wall.suffix.lower() == ".gif":
+-        wall = convert_gif(wall)
++    wall_cache = get_wall_cache(wall)
++    cache = wallpapers_cache_dir / compute_hash(wall_cache)
+ 
+     name = "dynamic"
+ 
+     if not no_smart:
+-        smart_opts = get_smart_opts(wall, cache)
++        smart_opts = get_smart_opts(wall_cache, cache)
+         scheme = Scheme(
+             {
+                 "name": name,
+@@ -126,28 +199,10 @@ def get_colours_for_wall(wall: Path | str, no_smart: bool) -> None:
+         "flavour": scheme.flavour,
+         "mode": scheme.mode,
+         "variant": scheme.variant,
+-        "colours": get_colours_for_image(get_thumb(wall, cache), scheme),
++        "colours": get_colours_for_image(get_thumb(wall_cache, cache), scheme),
+     }
+ 
+ 
+-def convert_gif(wall: Path) -> Path:
+-    cache = wallpapers_cache_dir / compute_hash(wall)
+-    output_path = cache / "first_frame.png"
+-
+-    if not output_path.exists():
+-        output_path.parent.mkdir(parents=True, exist_ok=True)
+-        with Image.open(wall) as img:
+-            try:
+-                img.seek(0)
+-            except EOFError:
+-                pass
+-
+-            img = img.convert("RGB")
+-            img.save(output_path, "PNG")
+-
+-    return output_path
+-
+-
+ def set_wallpaper(wall: Path, no_smart: bool) -> None:
+     # Make path absolute
+     wall = Path(wall).resolve()
+@@ -155,8 +210,8 @@ def set_wallpaper(wall: Path, no_smart: bool) -> None:
+     if not is_valid_image(wall):
+         raise ValueError(f'"{wall}" is not a valid image')
+ 
+-    # Use gif's 1st frame for thumb only
+-    wall_cache = convert_gif(wall) if wall.suffix.lower() == ".gif" else wall
++    # Use media's 1st frame for thumb only
++    wall_cache = get_wall_cache(wall)
+ 
+     # Update files
+     wallpaper_path_path.parent.mkdir(parents=True, exist_ok=True)
+@@ -178,6 +233,7 @@ def set_wallpaper(wall: Path, no_smart: bool) -> None:
+     # Change mode and variant based on wallpaper colour
+     if scheme.name == "dynamic" and not no_smart:
+         smart_opts = get_smart_opts(wall_cache, cache)
++
+         scheme.mode = smart_opts["mode"]
+         scheme.variant = smart_opts["variant"]
+ 
+@@ -215,3 +271,10 @@ def set_random(args: Namespace) -> None:
+         pass
+ 
+     set_wallpaper(random.choice(wallpapers), args.no_smart)
++
++
++def get_thumb_for_wall(wall: Path | str) -> str:
++    wall = Path(wall).resolve()
++    wall_cache = get_wall_cache(wall)
++    cache = wallpapers_cache_dir / compute_hash(wall_cache)
++    return str(get_preview(wall_cache, cache))

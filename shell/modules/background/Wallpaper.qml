@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtMultimedia
 import Quickshell
 import Caelestia.Config
 import qs.components
@@ -13,6 +14,7 @@ Item {
     id: root
 
     property string source: Wallpapers.current
+    readonly property bool isVideo: Wallpapers.isVideo(source)
     property Image current: one
     property bool completed
     property bool revealSent: false
@@ -29,23 +31,26 @@ Item {
     }
 
     onCurrentChanged: {
-        if (current)
+        if (current || isVideo)
             sendReveal();
     }
 
     onSourceChanged: {
         if (!source)
             current = null;
-        else if (current === one)
-            two.update();
-        else
-            one.update();
+        else if (!Wallpapers.isVideo(source)) {
+            if (current === one)
+                two.update();
+            else
+                one.update();
+        }
     }
 
     Component.onCompleted: {
         if (source)
             Qt.callLater(() => {
-                one.update();
+                if (!Wallpapers.isVideo(source))
+                    one.update();
                 completed = true;
             });
     }
@@ -95,8 +100,8 @@ Item {
                             id: dialog
 
                             title: qsTr("Select a wallpaper")
-                            filterLabel: qsTr("Image files")
-                            filters: Images.validImageExtensions
+                            filterLabel: qsTr("Media files")
+                            filters: Images.validImageExtensions.concat(["*.mp4", "*.webm", "*.mkv", "*.mov", "*.avi"])
                             onAccepted: path => Wallpapers.setWallpaper(path)
                         }
 
@@ -121,12 +126,67 @@ Item {
         }
     }
 
+    Item {
+        id: videoContainer
+        anchors.fill: parent
+        opacity: isVideo && source ? 1 : 0
+        visible: opacity > 0
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: 600
+                easing.type: Easing.OutQuad
+            }
+        }
+
+        MediaPlayer {
+            id: mediaPlayer
+            source: isVideo && root.source ? (root.source.startsWith("file://") ? root.source : "file://" + root.source) : ""
+            loops: MediaPlayer.Infinite
+            audioOutput: null
+            videoOutput: videoOutput
+
+            property bool shouldPlay: isVideo && !Wallpapers.isCovered
+
+            // Pausing while covered is the whole point of the video wallpaper:
+            // a paused MediaPlayer stops decoding, so CPU/GPU drop to idle.
+            function syncPlayback(): void {
+                if (!source) {
+                    stop();
+                    return;
+                }
+                if (shouldPlay) {
+                    if (playbackState !== MediaPlayer.PlayingState)
+                        play();
+                    root.sendReveal();
+                } else if (playbackState === MediaPlayer.PlayingState) {
+                    pause();
+                }
+            }
+
+            onShouldPlayChanged: syncPlayback()
+            onSourceChanged: syncPlayback()
+
+            // The bindings above may settle before their handlers are connected,
+            // so the initial state has to be applied explicitly.
+            Component.onCompleted: syncPlayback()
+        }
+
+        VideoOutput {
+            id: videoOutput
+            anchors.fill: parent
+            fillMode: VideoOutput.PreserveAspectCrop
+        }
+    }
+
     Img {
         id: one
+        visible: !root.isVideo
     }
 
     Img {
         id: two
+        visible: !root.isVideo
     }
 
     component Img: CachingImage {
@@ -151,7 +211,7 @@ Item {
 
         states: State {
             name: "visible"
-            when: root.current === img
+            when: root.current === img && !root.isVideo
 
             PropertyChanges {
                 img.opacity: 1
@@ -167,3 +227,4 @@ Item {
         }
     }
 }
+

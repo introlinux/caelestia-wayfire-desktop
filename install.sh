@@ -332,12 +332,21 @@ ANIMPATCH
     #       "$HOME/.local/bin/oneko-rust"
 
     # --- CLI de Caelestia (python) ---------------------------------------------
-    if command -v caelestia >/dev/null && [ -x /usr/local/bin/caelestia ]; then
-        log "CLI de caelestia ya instalada — omitiendo"
+    # Se parchea para soportar fondos de vídeo (extensiones, fotograma vía
+    # ffmpeg y previews para el selector). El marcador VIDEO_EXTENSIONS
+    # distingue una CLI parcheada de una de stock: comprobar solo que el binario
+    # existe daría por buena una instalación sin el parche.
+    if python3 -c "import caelestia.utils.wallpaper as w; raise SystemExit(0 if hasattr(w, 'VIDEO_EXTENSIONS') else 1)" 2>/dev/null; then
+        log "CLI de caelestia (parcheada) ya instalada — omitiendo"
     else
-        log "Instalando la CLI de Caelestia (pip)"
-        sudo pip install --break-system-packages \
-            "git+${CAELESTIA_CLI_REPO}@${CAELESTIA_CLI_COMMIT}"
+        log "Instalando la CLI de Caelestia (pip, con soporte de fondos animados)"
+        rm -rf "$BUILD_DIR/caelestia-cli"
+        git clone "$CAELESTIA_CLI_REPO" "$BUILD_DIR/caelestia-cli"
+        git -C "$BUILD_DIR/caelestia-cli" checkout "$CAELESTIA_CLI_COMMIT"
+        log "Aplicando parche de fondos animados (vídeo + ffmpeg + previews)"
+        git -C "$BUILD_DIR/caelestia-cli" apply \
+            "$REPO/patches/caelestia-cli-animated-wallpapers.patch"
+        sudo pip install --break-system-packages "$BUILD_DIR/caelestia-cli"
     fi
 fi
 
@@ -530,6 +539,9 @@ ok=1
 command -v wayfire >/dev/null || { warn "wayfire no está instalado"; ok=0; }
 [ -f /usr/local/lib/x86_64-linux-gnu/wayfire/libview-shot.so ] || { warn "Falta view-shot (miniaturas de la barra degradarán a icono)"; ok=0; }
 command -v caelestia >/dev/null || { warn "CLI caelestia no encontrada"; ok=0; }
+python3 -c "import caelestia.utils.wallpaper as w; raise SystemExit(0 if hasattr(w, 'VIDEO_EXTENSIONS') else 1)" 2>/dev/null \
+    || { warn "CLI caelestia sin el parche de fondos animados (los vídeos no funcionarán como fondo)"; ok=0; }
+[ -x "$HOME/.local/bin/caelestia-window-watch" ] || { warn "Falta caelestia-window-watch (el fondo animado no se auto-pausará)"; ok=0; }
 [ -d /usr/lib/qt6/qml/Caelestia ] || { warn "Plugin QML Caelestia no instalado"; ok=0; }
 [ -x "$HOME/.local/bin/caelestia-wayfire-start" ] || { warn "Falta caelestia-wayfire-start"; ok=0; }
 
