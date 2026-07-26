@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Converts video files to HD (720p) or
+    Full HD (1080p). If a video has lower
+    resolution, a warning is displayed before
+    upscaling.
+
+    Drag one or more videos onto the
+    icon, or launch it to pick them.
+  </Summary>
+  <Summary xml:lang="es">
+    Convierte archivos de vídeo a resolución
+    HD (720p) o Full HD (1080p). Si el vídeo
+    tiene menor resolución, se advierte al
+    usuario antes de escalarlo.
+
+    Arrastre uno o varios vídeos sobre
+    el icono, o láncelo para elegirlos.
+  </Summary>
+  <Summary xml:lang="gl">
+    Converte ficheiros de vídeo a resolución
+    HD (720p) ou Full HD (1080p). Se o vídeo
+    ten menor resolución, advírtese ao
+    usuario antes de escalalo.
+
+    Arrastre un ou varios ficheiros sobre
+    a icona, ou lánceo para escollelos.
+  </Summary>
+</AppInfo>

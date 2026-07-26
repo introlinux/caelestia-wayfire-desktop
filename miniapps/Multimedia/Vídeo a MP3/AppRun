@@ -45,7 +45,7 @@ for f in "${files[@]}"; do
     else
         out=$(salida_libre "$f")
         # Pista MP3: se copia tal cual; cualquier otra se recodifica.
-        if [ "$codec" = "mp3" ]; then opts=(-codec:a copy); else opts=(-codec:a libmp3lame -q:a 2); fi
+        if [ "$codec" = "mp3" ]; then opts=(-codec:a copy); else opts=(-codec:a libmp3lame -q:a 0); fi
         ffmpeg -nostdin -hide_banner -loglevel error -i "$f" -vn "${opts[@]}" "$out" 2>/dev/null \
             || { rm -f "$out"; basename "$f" >>"$errores"; }
     fi

@@ -13,7 +13,8 @@ case $LANG in
          T_RES="Resultados de"
          T_W="Escritura secuencial:"
          T_R="Lectura secuencial:"
-         T_ERR="La prueba falló. ¿La unidad admite escritura?" ;;
+         T_ERR="La prueba falló. ¿La unidad admite escritura?"
+         T_NOWRITE="No se puede escribir en la unidad: está montada de solo lectura o no tiene ninguna carpeta con permiso de escritura." ;;
     gl*) T_TITLE="DriveSpeed"
          T_TEXT="Escolla a unidade a medir:"
          C_MOUNT="Unidade (punto de montaxe)" C_DEV="Dispositivo" C_SIZE="Tamaño" C_FREE="Libre"
@@ -23,7 +24,8 @@ case $LANG in
          T_RES="Resultados de"
          T_W="Escritura secuencial:"
          T_R="Lectura secuencial:"
-         T_ERR="A proba fallou. Admite escritura a unidade?" ;;
+         T_ERR="A proba fallou. Admite escritura a unidade?"
+         T_NOWRITE="Non se pode escribir na unidade: está montada de só lectura ou non ten ningunha carpeta con permiso de escritura." ;;
     *)   T_TITLE="DriveSpeed"
          T_TEXT="Choose the drive to benchmark:"
          C_MOUNT="Drive (mount point)" C_DEV="Device" C_SIZE="Size" C_FREE="Free"
@@ -33,37 +35,76 @@ case $LANG in
          T_RES="Results for"
          T_W="Sequential write:"
          T_R="Sequential read:"
-         T_ERR="The test failed. Is the drive writable?" ;;
+         T_ERR="The test failed. Is the drive writable?"
+         T_NOWRITE="Cannot write to the drive: it is mounted read-only or has no writable folder." ;;
 esac
 
+# ¿Se puede crear realmente un archivo en este directorio? Es la única prueba
+# fiable: -w no ve montajes de solo lectura, ACL ni opciones de NTFS/exFAT.
+escribible() {
+    [ -d "$1" ] || return 1
+    (: >"$1/.drivespeed.probe") 2>/dev/null || return 1
+    rm -f "$1/.drivespeed.probe"
+}
+
+# Imprime un directorio donde medir dentro del sistema de archivos montado en
+# $1. Muchas particiones (sistemas instalados, discos ajenos) tienen la raíz en
+# manos de root aunque el usuario sí pueda escribir en alguna carpeta, así que
+# se prueban los sitios habituales y, en último término, el primer nivel.
+dir_escritura() {
+    local raiz=$1 base=$1 cand montaje
+    [ "$base" = "/" ] && base=""
+    montaje=$(findmnt -no TARGET -T "$raiz" 2>/dev/null) || return 1
+    for cand in "$raiz" "$base/$USER" "$base/home/$USER" "$base/tmp" "$base"/*/; do
+        cand=${cand%/}
+        [ -n "$cand" ] && [ -d "$cand" ] || continue
+        # no salirse del sistema de archivos (puede haber montajes anidados)
+        [ "$(findmnt -no TARGET -T "$cand" 2>/dev/null)" = "$montaje" ] || continue
+        escribible "$cand" && { printf '%s\n' "$cand"; return 0; }
+    done
+    return 1
+}
+
 # La unidad del usuario siempre está disponible, más las unidades montadas
-# sobre dispositivos reales con permiso de escritura
+# sobre dispositivos reales en las que se pueda escribir en algún sitio
 filas=(FALSE "$HOME" "$(df --output=source "$HOME" | tail -1)" \
     "$(df -h --output=size "$HOME" | tail -1 | tr -d ' ')" \
     "$(df -h --output=avail "$HOME" | tail -1 | tr -d ' ')")
-while read -r target source size avail; do
-    [ -w "$target" ] || continue
-    [ "$target" = "$HOME" ] && continue
+declare -A vistas=()
+vistas[$(findmnt -no SOURCE -T "$HOME")]=1
+while read -r target source size avail opciones; do
+    target=${target//\\x20/ }          # findmnt -r escapa los espacios
+    case $source in /dev/*) ;; *) continue ;; esac
+    case $opciones in ro | ro,*) continue ;; esac
+    [ -n "${vistas[$source]:-}" ] && continue
+    vistas[$source]=1
+    dir_escritura "$target" >/dev/null || continue
     filas+=(FALSE "$target" "$source" "$size" "$avail")
-done < <(findmnt --real -rn -o TARGET,SOURCE,SIZE,AVAIL | grep ' /dev/')
+done < <(findmnt --real -rn -o TARGET,SOURCE,SIZE,AVAIL,VFS-OPTIONS)
 
-# Si se arrastró una carpeta, medir su sistema de archivos directamente
-if [ $# -gt 0 ] && [ -d "$1" ]; then
-    unidad=$(df --output=target "$1" | tail -1)
+# Si se arrastró una carpeta (o un archivo), medir ahí mismo: es la carpeta que
+# el usuario sabe que puede escribir, aunque la raíz de la partición sea ajena
+if [ $# -gt 0 ] && [ -e "$1" ]; then
+    destino=$1
+    [ -d "$destino" ] || destino=$(dirname -- "$destino")
+    unidad=$(findmnt -no TARGET -T "$destino" 2>/dev/null)
+    escribible "$destino" || destino=$(dir_escritura "$unidad")
 else
     unidad=$(zenity --list --radiolist --title="$T_TITLE" --text="$T_TEXT" \
         --column="" --column="$C_MOUNT" --column="$C_DEV" --column="$C_SIZE" --column="$C_FREE" \
         "${filas[@]}" --width=560 --height=340) || exit 0
+    [ -z "$unidad" ] && exit 0
+    destino=$(dir_escritura "$unidad")
 fi
-[ -z "$unidad" ] && exit 0
+[ -z "${destino:-}" ] && { zenity --error --title="$T_TITLE" --text="$T_NOWRITE"; exit 1; }
 
-libre_kb=$(df --output=avail -k "$unidad" | tail -1)
+libre_kb=$(df --output=avail -k "$destino" | tail -1)
 if [ "$libre_kb" -lt 307200 ]; then
     zenity --error --title="$T_TITLE" --text="$T_NOSPACE"
     exit 1
 fi
 
-archivo="$unidad/.drivespeed.tmp"
+archivo="$destino/.drivespeed.tmp"
 tmp=$(mktemp -d)
 trap 'rm -f "$archivo"; rm -rf "$tmp"' EXIT
 

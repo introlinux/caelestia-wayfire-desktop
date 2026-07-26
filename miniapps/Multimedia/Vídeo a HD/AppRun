@@ -1,0 +1,118 @@
+#!/bin/bash
+# Convierte archivos de vídeo a resolución HD (720p) o Full HD (1080p).
+# Si el vídeo tiene menor resolución que la elegida, se advierte al usuario
+# de que el reescalado puede verse pixelado y se pide confirmación.
+set -u
+
+case $LANG in
+    es*) T_TITLE="Vídeo a HD"
+         T_PICK="Seleccione los archivos de vídeo"
+         T_TEXT="Elija la resolución de destino:"
+         T_COL="Resolución"
+         T_WARN="El vídeo \"%s\" tiene una resolución menor (%dx%d) que la resolución seleccionada (%s).\n\nSi se escala, es muy probable que la imagen se vea pixelada o pierda calidad.\n\n¿Desea continuar con la conversión de este vídeo?"
+         T_NOVIDEO="No se pudo leer la resolución del archivo:"
+         T_FILE="Vídeo"
+         T_ERR="No se pudo convertir la resolución de estos archivos:" ;;
+    gl*) T_TITLE="Vídeo a HD"
+         T_PICK="Seleccione os ficheiros de vídeo"
+         T_TEXT="Escolla a resolución de destino:"
+         T_COL="Resolución"
+         T_WARN="O vídeo \"%s\" ten unha resolución menor (%dx%d) que a resolución seleccionada (%s).\n\nSe se escala, é moi probable que a imaxe se sexa pixelada ou perda calidade.\n\nQuere continuar coa conversión deste vídeo?"
+         T_NOVIDEO="Non se puido ler a resolución do ficheiro:"
+         T_FILE="Vídeo"
+         T_ERR="Non se puido converter a resolución destes ficheiros:" ;;
+    *)   T_TITLE="Video to HD"
+         T_PICK="Select video files"
+         T_TEXT="Choose the target resolution:"
+         T_COL="Resolution"
+         T_WARN="The video \"%s\" has a lower resolution (%dx%d) than the selected resolution (%s).\n\nUpscaling it will likely make it look pixelated or degrade quality.\n\nDo you want to continue converting this video?"
+         T_NOVIDEO="Could not read resolution from file:"
+         T_FILE="Video"
+         T_ERR="Could not convert resolution of these files:" ;;
+esac
+
+if [ $# -eq 0 ]; then
+    mapfile -t files < <(zenity --file-selection --multiple --separator=$'\n' --title="$T_PICK")
+else
+    files=("$@")
+fi
+[ ${#files[@]} -eq 0 ] && exit 0
+
+choice=$(zenity --list --radiolist --title="$T_TITLE" --text="$T_TEXT" \
+    --column="" --column="$T_COL" \
+    TRUE "HD (720p)" FALSE "Full HD (1080p)" \
+    --height=320 --width=380) || exit 0
+
+case "$choice" in
+    *"720p"*)
+        target_w=1280
+        target_h=720
+        target_label="HD (720p)"
+        target_tag="720p"
+        ;;
+    *"1080p"*)
+        target_w=1920
+        target_h=1080
+        target_label="Full HD (1080p)"
+        target_tag="1080p"
+        ;;
+    *)
+        exit 0
+        ;;
+esac
+
+salida_libre() {
+    local file="$1" tag="$2"
+    local base="${file%.*}" ext="${file##*.}" out n=1
+    out="${base}-${tag}.${ext}"
+    while [ -e "$out" ]; do
+        out="${base}-${tag}-${n}.${ext}"
+        n=$((n + 1))
+    done
+    printf '%s' "$out"
+}
+
+to_convert=()
+for f in "${files[@]}"; do
+    dim=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$f" 2>/dev/null)
+    orig_w=$(echo "$dim" | cut -d',' -f1)
+    orig_h=$(echo "$dim" | cut -d',' -f2)
+
+    if ! [[ "$orig_w" =~ ^[0-9]+$ ]] || ! [[ "$orig_h" =~ ^[0-9]+$ ]]; then
+        zenity --warning --title="$T_TITLE" --text="$T_NOVIDEO\n$(basename "$f")"
+        continue
+    fi
+
+    orig_pixels=$((orig_w * orig_h))
+    target_pixels=$((target_w * target_h))
+
+    if [ "$orig_pixels" -lt "$target_pixels" ]; then
+        msg=$(printf "$T_WARN" "$(basename "$f")" "$orig_w" "$orig_h" "$target_label")
+        if zenity --question --title="$T_TITLE" --text="$msg" --width=420; then
+            to_convert+=("$f")
+        fi
+    else
+        to_convert+=("$f")
+    fi
+done
+
+[ ${#to_convert[@]} -eq 0 ] && exit 0
+
+errores=$(mktemp)
+trap 'rm -f "$errores"' EXIT
+
+total=${#to_convert[@]}
+n=0
+for f in "${to_convert[@]}"; do
+    echo "# $T_FILE: $(basename "$f")"
+    out=$(salida_libre "$f" "$target_tag")
+    ffmpeg -nostdin -hide_banner -loglevel error -i "$f" \
+        -vf "scale=w=${target_w}:h=${target_h}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2" \
+        -c:v libx264 -crf 20 -preset medium -c:a copy "$out" 2>/dev/null \
+        || { rm -f "$out"; basename "$f" >>"$errores"; }
+    n=$((n + 1))
+    echo $((100 * n / total))
+done | zenity --progress --auto-close --title="$T_TITLE" --width=350
+
+[ -s "$errores" ] && zenity --warning --title="$T_TITLE" --text="$T_ERR\n\n$(cat "$errores")"
+exit 0
