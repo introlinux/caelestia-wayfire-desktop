@@ -171,6 +171,11 @@ Singleton {
         readonly property bool isAppleDisplay: root.appleDisplayPresent && modelData.model.startsWith("StudioDisplay")
         property real brightness
         property real queuedBrightness: NaN
+        // Cierto mientras se lee el brillo del monitor (lectura inicial y
+        // relectura al detectar DDC). El cambio de `brightness` que provoca esa
+        // lectura no lo ha pedido el usuario, así que la UI puede ignorarlo
+        // (p.ej. el OSD, que si no se despliega solo al iniciar sesión).
+        property bool initializing: false
 
         readonly property Process initProc: Process {
             stdout: StdioCollector {
@@ -182,6 +187,7 @@ Singleton {
                         const [, , , cur, max] = text.split(" ");
                         monitor.brightness = parseInt(cur) / parseInt(max);
                     }
+                    monitor.initializing = false;
                 }
             }
         }
@@ -228,6 +234,7 @@ Singleton {
             else
                 initProc.command = ["sh", "-c", "echo a b c $(brightnessctl g) $(brightnessctl m)"];
 
+            initializing = true;
             initProc.running = true;
         }
 
