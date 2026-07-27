@@ -13,5 +13,10 @@ export QT_QPA_PLATFORMTHEME=gtk3
 # instances by the literal -c argument, so the name must be identical on both
 # sides. ~/.config/quickshell/caelestia is a symlink to ~/.caelestia/caelestia-wayfire
 # (created by install.sh).
+# El plugin de config avisa por cada Tokens.*/Config.* leído desde un item sin
+# pantalla asignada (tokensattached.cpp). Es solo un fallback a la config global,
+# pero satura el log con cientos de líneas. Silenciamos esa categoría; para
+# diagnosticar problemas de configuración, quitar --log-rules.
 exec /usr/local/bin/quickshell -c caelestia \
+    --log-rules 'caelestia.config.warning=false' \
     >> /tmp/caelestia-qs.log 2>&1
