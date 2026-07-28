@@ -53,7 +53,7 @@ fi
 
 modo=$(zenity --list --radiolist --title="$T_TITLE" --text="$T_MODE_TEXT" \
     --column="" --column="" TRUE "$T_MODE_AUTO" FALSE "$T_MODE_MANUAL" \
-    --width=480 --height=260) || exit 0
+    --width=480 --height=450) || exit 0
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

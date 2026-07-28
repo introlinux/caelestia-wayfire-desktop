@@ -1,5 +1,6 @@
 #!/bin/bash
 # Convierte imágenes al formato elegido; el resultado queda junto al original.
+# Con PDF de destino, todas las imágenes se fusionan en un único documento.
 set -u
 
 case $LANG in
@@ -9,21 +10,30 @@ case $LANG in
          T_COL="Formato"
          T_FILE="Imagen"
          T_SAME="Estos archivos ya estaban en ese formato:"
-         T_ERR="No se pudieron convertir estos archivos:" ;;
+         T_ERR="No se pudieron convertir estos archivos:"
+         T_MERGE="Creando el PDF…"
+         T_PDFOK="PDF creado:"
+         T_PDFERR="No se pudo crear el PDF." ;;
     gl*) T_TITLE="Conversor de imaxes"
          T_PICK="Seleccione as imaxes a converter"
          T_TEXT="Escolla o formato de destino:"
          T_COL="Formato"
          T_FILE="Imaxe"
          T_SAME="Estes ficheiros xa estaban nese formato:"
-         T_ERR="Non se puideron converter estes ficheiros:" ;;
+         T_ERR="Non se puideron converter estes ficheiros:"
+         T_MERGE="Creando o PDF…"
+         T_PDFOK="PDF creado:"
+         T_PDFERR="Non se puido crear o PDF." ;;
     *)   T_TITLE="Image converter"
          T_PICK="Select the images to convert"
          T_TEXT="Choose the target format:"
          T_COL="Format"
          T_FILE="Image"
          T_SAME="These files were already in that format:"
-         T_ERR="These files could not be converted:" ;;
+         T_ERR="These files could not be converted:"
+         T_MERGE="Creating the PDF…"
+         T_PDFOK="PDF created:"
+         T_PDFERR="The PDF could not be created." ;;
 esac
 
 if [ $# -eq 0 ]; then
@@ -48,6 +58,64 @@ salida_libre() {
 errores=$(mktemp) iguales=$(mktemp)
 trap 'rm -f "$errores" "$iguales"' EXIT
 
+avisos() {
+    [ -s "$iguales" ] && zenity --info --title="$T_TITLE" --text="$T_SAME\n\n$(cat "$iguales")"
+    [ -s "$errores" ] && zenity --warning --title="$T_TITLE" --text="$T_ERR\n\n$(cat "$errores")"
+    return 0
+}
+
+if [ "$ext" = "pdf" ]; then
+    entradas=()
+    for f in "${files[@]}"; do
+        ext_orig="${f##*.}"; ext_orig=${ext_orig,,}
+        if [ "$ext_orig" = "pdf" ]; then
+            basename "$f" >>"$iguales"
+        else
+            entradas+=("$f")
+        fi
+    done
+    if [ ${#entradas[@]} -eq 0 ]; then
+        avisos
+        exit 0
+    fi
+
+    # Orden natural: así IMG_2 va antes que IMG_10 en las páginas del PDF.
+    mapfile -d '' -t entradas < <(printf '%s\0' "${entradas[@]}" | sort -zV)
+    out=$(salida_libre "${entradas[0]}" pdf)
+
+    fusionar() {
+        # img2pdf embebe las imágenes tal cual, sin recomprimir ni perder calidad.
+        img2pdf --output "$out" "${entradas[@]}" 2>/dev/null && return 0
+        # Falla en bloque si rechaza alguna (p. ej. PNG con transparencia):
+        # se descarta solo esa y se fusionan las demás.
+        local buenas=()
+        for f in "${entradas[@]}"; do
+            if img2pdf --output /dev/null "$f" 2>/dev/null; then
+                buenas+=("$f")
+            else
+                basename "$f" >>"$errores"
+            fi
+        done
+        [ ${#buenas[@]} -eq 0 ] && return 1
+        img2pdf --output "$out" "${buenas[@]}" 2>/dev/null
+    }
+
+    fusionar &
+    pid=$!
+    while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done |
+        zenity --progress --pulsate --auto-close --no-cancel \
+               --title="$T_TITLE" --text="$T_MERGE" --width=350
+    if wait "$pid"; then
+        avisos
+        zenity --info --title="$T_TITLE" --text="$T_PDFOK\n\n$out"
+    else
+        rm -f "$out"
+        avisos
+        zenity --warning --title="$T_TITLE" --text="$T_PDFERR"
+    fi
+    exit 0
+fi
+
 total=${#files[@]}
 n=0
 for f in "${files[@]}"; do
@@ -58,20 +126,11 @@ for f in "${files[@]}"; do
         basename "$f" >>"$iguales"
     else
         out=$(salida_libre "$f" "$ext")
-        if [ "$ext" = "pdf" ]; then
-            # img2pdf encapsula JPG/PNG en el PDF sin recomprimir; si no puede
-            # (p. ej. PNG con transparencia), magick como respaldo.
-            img2pdf --output "$out" "$f" 2>/dev/null ||
-                magick "$f" "$out" 2>/dev/null ||
-                { rm -f "$out"; basename "$f" >>"$errores"; }
-        else
-            magick "$f" -quality 92 "$out" 2>/dev/null || { rm -f "$out"; basename "$f" >>"$errores"; }
-        fi
+        magick "$f" -quality 92 "$out" 2>/dev/null || { rm -f "$out"; basename "$f" >>"$errores"; }
     fi
     n=$((n + 1))
     echo $((100 * n / total))
 done | zenity --progress --auto-close --title="$T_TITLE" --width=350
 
-[ -s "$iguales" ] && zenity --info --title="$T_TITLE" --text="$T_SAME\n\n$(cat "$iguales")"
-[ -s "$errores" ] && zenity --warning --title="$T_TITLE" --text="$T_ERR\n\n$(cat "$errores")"
+avisos
 exit 0
