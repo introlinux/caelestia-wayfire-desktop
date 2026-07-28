@@ -33,6 +33,8 @@ CAELESTIA_CLI_REPO="https://github.com/caelestia-dots/cli.git"
 CAELESTIA_CLI_COMMIT="eddee4dec"
 ONEKO_REPO="https://github.com/Abishek-Pechiappan/Oneko-Rust-Arch"
 ONEKO_COMMIT="ed7a5312670c1cb9bd7b41647c7a4a6522db19d1"
+FLAMESHOT_REPO="https://github.com/flameshot-org/flameshot.git"
+FLAMESHOT_TAG="v14.0.0"
 NERD_FONT_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/CascadiaCode.zip"
 
 SKIP_APT=0 SKIP_BUILDS=0 ONLY_DOTFILES=0
@@ -348,6 +350,36 @@ ANIMPATCH
             "$REPO/patches/caelestia-cli-animated-wallpapers.patch"
         sudo pip install --break-system-packages "$BUILD_DIR/caelestia-cli"
     fi
+
+    # --- Flameshot (capturas de pantalla, atajo Impr Pant) ---------------------
+    # Ubuntu 26.04 solo empaqueta la 13.3.0; la 14 mejora el soporte de Wayland
+    # y el escalado fraccionario, así que se compila desde el tag.
+    # USE_WAYLAND_CLIPBOARD=ON copia al portapapeles vía KF6GuiAddons (protocolo
+    # de wlroots); sin esa opción la copia solo funciona bajo XWayland. Es lo
+    # único que añade dependencias de compilación: libkf6guiaddons-dev y su
+    # arrastre, ~0,6 MB (el resto de Qt6 ya lo pide Quickshell).
+    # KDSingleApplication va vendorizado en el repo (no es submódulo), así que
+    # basta un clon --depth 1 sin --recurse-submodules.
+    if /usr/local/bin/flameshot --version 2>/dev/null | grep -q "Flameshot v14"; then
+        log "Flameshot 14 ya instalado en /usr/local — omitiendo"
+    else
+        log "Compilando Flameshot $FLAMESHOT_TAG"
+        rm -rf "$BUILD_DIR/flameshot"
+        git clone --depth 1 --branch "$FLAMESHOT_TAG" "$FLAMESHOT_REPO" "$BUILD_DIR/flameshot"
+        cmake -S "$BUILD_DIR/flameshot" -B "$BUILD_DIR/flameshot/build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DUSE_WAYLAND_CLIPBOARD=ON -DDISABLE_UPDATE_CHECKER=ON
+        ninja -C "$BUILD_DIR/flameshot/build"
+        sudo ninja -C "$BUILD_DIR/flameshot/build" install
+        # El árbol de compilación son ~300 MB de objetos que no hacen falta una
+        # vez instalado (a diferencia de wayfire, aquí no se itera sobre fuentes).
+        rm -rf "$BUILD_DIR/flameshot"
+        # /usr/local/bin gana en el PATH, pero el paquete de APT dejaría además su
+        # propio .desktop y su servicio de usuario apuntando a /usr/bin/flameshot.
+        if dpkg-query -W -f='${Status}' flameshot 2>/dev/null | grep -q 'ok installed'; then
+            warn "El paquete flameshot de APT sigue instalado: quítalo con 'sudo apt-get remove flameshot' para no tener dos versiones"
+        fi
+    fi
 fi
 
 # -----------------------------------------------------------------------------
@@ -479,6 +511,9 @@ backup "$HOME/.config/gtk-3.0/gtk.css"
 cp -f "$REPO/config/gtk-3.0/gtk.css" "$HOME/.config/gtk-3.0/gtk.css"
 backup "$HOME/.config/gtk-4.0/gtk.css"; mkdir -p "$HOME/.config/gtk-4.0"
 cp -f "$REPO/config/gtk-4.0/gtk.css" "$HOME/.config/gtk-4.0/gtk.css"
+# Flameshot: tinta la UI con el `primary` del esquema en vez del morado de
+# fábrica. Va templated porque savePath lleva la ruta absoluta de $HOME.
+install_templated "$REPO/config/flameshot/flameshot.ini" "$HOME/.config/flameshot/flameshot.ini"
 if [ -f "$REPO/config/mimeapps.list" ]; then
     backup "$HOME/.config/mimeapps.list"
     cp -f "$REPO/config/mimeapps.list" "$HOME/.config/mimeapps.list"
