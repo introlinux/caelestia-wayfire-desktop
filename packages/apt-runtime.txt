@@ -81,7 +81,8 @@ qml6-module-qt-labs-settings
 # --- MiniApps (~/MiniApps, dock de la esquina inferior-izquierda) ---
 # Diálogos: casi todas las miniapps usan zenity (yad ya está arriba)
 zenity
-# Gráficos: girar/redimensionar/convertir con ImageMagick; minilibro usa img2pdf
+# Gráficos: girar/redimensionar/convertir con ImageMagick; el minilibro y el
+# conversor de imágenes (fusión a un único PDF sin recomprimir) usan img2pdf
 imagemagick
 img2pdf
 # Office: comprimir=ghostscript, unir/reorganizar=qpdf+pypdf, PDF→PNG=poppler,
