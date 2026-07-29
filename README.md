@@ -4,8 +4,8 @@ Entorno de escritorio Wayland completo para **Ubuntu 26.04**: el shell
 [Caelestia](https://github.com/caelestia-dots/shell) (QML/Quickshell) portado de
 Hyprland a **Wayfire**, con minimizado nativo, barra de tareas funcional,
 dock de MiniApps estilo ROX-Filer y toda la apariencia clonada al detalle
-(tema, iconos, cursor, fuentes y fondos de pantalla).
-
+(tema, iconos, cursor, fuentes y fondos de pantalla). Haz clic para ver una demostración en Youtube:
+[![VÍDEO DE YOUTUBE](https://github.com/user-attachments/assets/03079c82-641e-4874-913b-0b8ba8d2f945)](https://www.youtube.com/watch?v=ccOnplEYuSo)
 ## ¿Qué incluye?
 
 | Componente | Descripción |
