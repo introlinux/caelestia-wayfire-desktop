@@ -176,7 +176,12 @@ class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_inter
         {
             if ((g.width > 0) && (g.height > 0))
             {
-                data.pass->add_rect(color, data.target, g + origin, data.damage);
+                /* add_rect() blends with premultiplied alpha, but the colors come
+                 * straight from the config, so they have to be premultiplied here.
+                 * The cairo pieces need no such thing: cairo does it on its own. */
+                const wf::color_t premultiplied{
+                    color.r * color.a, color.g * color.a, color.b * color.a, color.a};
+                data.pass->add_rect(premultiplied, data.target, g + origin, data.damage);
             }
         };
 
@@ -193,12 +198,15 @@ class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_inter
                     wf::geometry_t{W - radius, 0, radius, radius} + origin, data.damage);
             }
 
-            /* Top border and the light line just inside it, between the corners */
+            /* Top border, then the band left over between the two corners, and
+             * the light line painted just inside the border. The background
+             * starts right below the border and the line goes on top of it,
+             * exactly like render_corner() stacks them, so that the straight
+             * part and the corners line up whatever the colors are. */
             rect({radius, 0, W - 2 * radius, b}, bd);
+            rect({radius, b, W - 2 * radius, radius - b}, bg);
             rect({radius, b, W - 2 * radius, 1}, hl);
-            /* Title bar background: first the band left over between the two
-             * corners, then the full width below them */
-            rect({radius, b + 1, W - 2 * radius, radius - b - 1}, bg);
+            /* Title bar background across the full width below the corners */
             rect({b, radius, W - 2 * b, T - 1 - radius}, bg);
             /* The line separating the title bar from the client */
             rect({b, T - 1, W - 2 * b, 1}, sep);
