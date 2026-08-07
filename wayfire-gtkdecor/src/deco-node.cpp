@@ -113,7 +113,14 @@ class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_inter
   public:
     wf::gtkdecor::decoration_theme_t theme;
     wf::gtkdecor::decoration_layout_t layout;
-    wf::region_t cached_region;
+    /* The interactive part of the frame: title bar, buttons and the four resize
+     * edges. It decides what swallows pointer and touch events. */
+    wf::region_t input_region;
+    /* The part the frame paints, used to clip the render pass. It matches
+     * input_region today, but the two answer different questions: a frame may
+     * well paint where it does not want to be clicked, a drop shadow being the
+     * obvious case. */
+    wf::region_t render_region;
 
     wf::dimensions_t size;
 
@@ -251,7 +258,7 @@ class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_inter
         if (auto view = _view.lock())
         {
             wf::pointf_t local = at - wf::pointf_t{get_offset()};
-            if (cached_region.contains_pointf(local) && view->is_mapped())
+            if (input_region.contains_pointf(local) && view->is_mapped())
             {
                 return wf::scene::input_node_t{
                     .node = this,
@@ -295,7 +302,7 @@ class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_inter
         void schedule_instructions(std::vector<wf::scene::render_instruction_t>& instructions,
             const wf::render_target_t& target, wf::region_t& damage) override
         {
-            auto our_region = self->cached_region + self->get_offset();
+            auto our_region = self->render_region + self->get_offset();
             wf::region_t our_damage = damage & our_region;
             if (!our_damage.empty())
             {
@@ -406,6 +413,19 @@ class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_inter
         handle_action(layout.handle_motion(position.x, position.y));
     }
 
+    /* Both regions are recomputed together so that they cannot drift apart. */
+    void recalculate_regions()
+    {
+        input_region  = layout.calculate_region();
+        render_region = input_region;
+    }
+
+    void clear_regions()
+    {
+        input_region.clear();
+        render_region.clear();
+    }
+
     void resize(wf::dimensions_t dims)
     {
         if (auto view = _view.lock())
@@ -415,7 +435,7 @@ class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_inter
             layout.resize(size.width, size.height);
             if (!view->toplevel()->current().fullscreen)
             {
-                this->cached_region = layout.calculate_region();
+                this->recalculate_regions();
             }
 
             view->damage();
@@ -429,12 +449,12 @@ class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_inter
         {
             current_thickness = 0;
             current_titlebar  = 0;
-            this->cached_region.clear();
+            this->clear_regions();
         } else
         {
             current_thickness = theme.get_border_size();
             current_titlebar  = theme.get_title_height() + theme.get_border_size();
-            this->cached_region = layout.calculate_region();
+            this->recalculate_regions();
         }
     }
 };
