@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<AppInfo>
+  <Summary>
+    Copies the installed system to another
+    partition and makes it bootable with
+    UEFI (rEFInd).
+
+    The copy is always incremental: an
+    empty partition gets everything, one
+    that already holds a copy is just
+    brought up to date. You can choose
+    whether your personal data comes along
+    or only the system and its look.
+  </Summary>
+  <Summary xml:lang="es">
+    Copia el sistema instalado en otra
+    partición y la deja arrancable por
+    UEFI (rEFInd).
+
+    La copia es siempre incremental: si la
+    partición está vacía se copia todo y
+    si ya tiene una copia solo se
+    actualiza. Puede elegir si van también
+    sus datos personales o solo el sistema
+    y su personalización.
+  </Summary>
+  <Summary xml:lang="gl">
+    Copia o sistema instalado noutra
+    partición e déixaa arrincable por
+    UEFI (rEFInd).
+
+    A copia é sempre incremental: se a
+    partición está baleira cópiase todo e
+    se xa ten unha copia só se actualiza.
+    Pode escoller se van tamén os seus
+    datos persoais ou só o sistema e a súa
+    personalización.
+  </Summary>
+</AppInfo>

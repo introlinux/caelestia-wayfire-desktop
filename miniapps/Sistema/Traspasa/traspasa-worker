@@ -1,0 +1,679 @@
+#!/bin/bash
+# traspasa-worker — parte privilegiada de la MiniApp «Traspasa».
+# Basado en traspasa_uefi (c) Antonio Sánchez León, Miguel Anxo Bouzada,
+# GALPon MinNo Team — 2012, modernizado 2026.
+#
+# Se lanza con pkexec desde AppRun y nunca habla directamente con el usuario:
+# escribe líneas «etiqueta<TAB>valor» en la salida estándar y AppRun las
+# traduce y las pinta en la barra de progreso. Los mensajes de diagnóstico van
+# por la salida de error, que AppRun guarda en el registro.
+#
+#   P <TAB> nn                    porcentaje de avance
+#   T <TAB> CLAVE <TAB> detalle   paso en curso
+#   E <TAB> CLAVE                 error (aborta)
+#   SIZE <TAB> total <TAB> basura <TAB> datos          (modo inspect)
+#   PART <TAB> dev <TAB> tipo <TAB> tamaño <TAB> fs <TAB> etiqueta
+#        <TAB> libre <TAB> VACIA|USADA|DESCONOCIDA <TAB> esp   (modo inspect)
+set -u
+umask 022
+
+MP=/media/traspasa_destino
+EFI_GUID=c12a7328-f81f-11d2-ba4b-00a0c93ec93b
+
+p() { printf 'P\t%s\n' "$1"; }
+t() { local clave=$1; shift; printf 'T\t%s\t%s\n' "$clave" "${*:-}"; }
+e() { printf 'E\t%s\n' "$1"; exit 1; }
+log() { printf '%s\n' "$*" >&2; }
+
+# ─── Trampa de limpieza: se ejecuta siempre al salir, también si zenity se
+#     cierra y el proceso muere por SIGPIPE a mitad de la copia ──────────────
+limpiar() {
+    local fs
+    for fs in boot/efi run dev sys proc; do
+        mountpoint -q "${MP}/${fs}" && umount "${MP}/${fs}" 2>/dev/null
+    done
+    mountpoint -q "$MP" && umount "$MP" 2>/dev/null
+    return 0
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Qué se copia y qué no
+# ═════════════════════════════════════════════════════════════════════════════
+
+# Carpetas personales de cada usuario, siempre presentes en el sistema.
+homes() {
+    local h
+    for h in /home/*; do [ -d "$h" ] && printf '%s\n' "$h"; done
+    [ -d /root ] && printf '%s\n' /root
+}
+
+# Carpetas XDG (Descargas, Documentos, Escritorio...) de un usuario. Se leen de
+# su user-dirs.dirs, que es la fuente fiable esté el sistema en el idioma que
+# esté, y además se prueban los nombres habituales por si no existe el fichero.
+xdg_dirs() {
+    local home=$1 conf="$1/.config/user-dirs.dirs" linea ruta nombre
+    local nombres=(
+        Descargas Downloads Baixadas Baixades Descàrregues
+        Documentos Documents
+        Escritorio Desktop Escriptori
+        Imágenes Imagenes Imaxes Imatges Pictures
+        Música Musica Music
+        Público Publico Públic Public
+        Vídeos Videos
+        Plantillas Modelos Plantilles Templates
+    )
+    if [ -r "$conf" ]; then
+        while IFS= read -r linea; do
+            case $linea in XDG_*_DIR=*) ;; *) continue ;; esac
+            ruta=${linea#*=}
+            ruta=${ruta%\"}; ruta=${ruta#\"}
+            ruta=${ruta/\$HOME/$home}
+            [ "$ruta" = "$home" ] && continue      # p.ej. XDG_TEMPLATES_DIR="$HOME"
+            [ -d "$ruta" ] && printf '%s\n' "$ruta"
+        done < "$conf"
+    fi
+    for nombre in "${nombres[@]}"; do
+        [ -d "$home/$nombre" ] && printf '%s\n' "$home/$nombre"
+    done
+}
+
+# Basura que no se copia nunca: cachés, papeleras y miniaturas. No es
+# información del usuario, solo peso muerto que se regenera solo.
+basura_rutas() {
+    local h d r
+    while IFS= read -r h; do
+        for r in .cache .thumbnails .local/share/Trash; do
+            [ -d "$h/$r" ] && printf '%s\n' "$h/$r"
+        done
+        for d in "$h"/.var/app/*/cache; do
+            [ -d "$d" ] && printf '%s\n' "$d"
+        done
+    done < <(homes)
+    [ -d /var/cache/apt/archives ] && printf '%s\n' /var/cache/apt/archives
+    return 0
+}
+
+# Credenciales de red del equipo. Se quedan fuera junto con el resto de los
+# datos personales; con «sistema completo» viajan, porque completo es completo.
+#
+# Ojo con dónde viven: en Ubuntu moderno NetworkManager ya no guarda las
+# conexiones en /etc/NetworkManager/system-connections (aquí esa carpeta está
+# vacía) sino en /etc/netplan/90-NM-*.yaml, con la contraseña en claro. Se
+# miran ambos sitios, y de netplan solo salen los ficheros que llevan secretos:
+# la configuración base (01-network-manager-all.yaml) tiene que viajar para que
+# el destino conserve la red.
+secretos_red_rutas() {
+    local f
+    [ -d /etc/NetworkManager/system-connections ] &&
+        printf 'V\t%s\n' /etc/NetworkManager/system-connections
+    [ -d /var/lib/iwd ] && printf 'V\t%s\n' /var/lib/iwd
+    for f in /etc/wpa_supplicant/*.conf; do
+        [ -e "$f" ] && printf 'X\t%s\n' "$f"
+    done
+    for f in /etc/netplan/*.yaml /etc/netplan/*.yml; do
+        [ -e "$f" ] || continue
+        # Los 90-NM-*.yaml los escribe NetworkManager, uno por conexión
+        # guardada: fuera todos. Del resto, fuera los que definan una red
+        # inalámbrica o lleven una contraseña dentro.
+        case ${f##*/} in 90-NM-*) printf 'X\t%s\n' "$f"; continue ;; esac
+        grep -qiE '(^|[[:space:]])wifis:|(password|psk|private-key)[[:space:]]*:' "$f" 2>/dev/null &&
+            printf 'X\t%s\n' "$f"
+    done
+    return 0
+}
+
+# Datos personales: lo que se excluye cuando el usuario pide traspasar «solo el
+# sistema». Se marca cada ruta con V (vaciar: la carpeta se crea vacía en el
+# destino), X (no copiar nada, ni la propia carpeta) o K (conservar aunque esté
+# dentro de algo que se vacía).
+#
+# Ojo: aquí NO entra la personalización del sistema (temas, iconos, fondos,
+# tipografías, dconf, ajustes de escritorio y del resto de aplicaciones), que
+# vive en ~/.config, ~/.local/share, ~/.themes, ~/.icons y ~/.fonts y sí se
+# copia. Solo salen los datos, los navegadores y las credenciales.
+datos_rutas() {
+    local h ruta rel f entrada sub
+    local rels=(
+        # Navegadores y correo (perfiles: historial, marcadores, sesiones)
+        .mozilla .thunderbird .netscape
+        snap/firefox snap/chromium snap/thunderbird
+        .var/app/org.mozilla.firefox .var/app/com.google.Chrome
+        .var/app/org.chromium.Chromium .var/app/org.mozilla.Thunderbird
+        .config/google-chrome .config/chromium .config/BraveSoftware
+        .config/microsoft-edge .config/vivaldi .config/opera
+        .config/epiphany .local/share/epiphany
+        .config/evolution .local/share/evolution .local/share/geary
+        # Mensajería
+        .purple .local/share/TelegramDesktop .config/Signal
+        .config/discord .config/Element .config/whatsdesk
+        # Contraseñas, claves y credenciales
+        .ssh .gnupg .password-store .pki
+        .local/share/keyrings .local/share/kwalletd
+        .aws .azure .config/gcloud .docker .kube .config/rclone
+        .netrc .git-credentials .npmrc .pypirc .config/hub
+        # Rastros de actividad
+        .local/share/recently-used.xbel .local/share/RecentDocuments
+        .local/share/gvfs-metadata .local/share/zeitgeist
+        .bash_history .zsh_history .python_history .mysql_history
+        .sqlite_history .node_repl_history .lesshst .viminfo .wget-hsts
+        .local/share/fish/fish_history
+    )
+    while IFS= read -r h; do
+        # Regla sencilla: nada de lo que se ve en la carpeta personal se copia,
+        # porque todo eso son datos del usuario. Las carpetas personales
+        # conocidas (Descargas, Documentos...) se conservan vacías para que el
+        # escritorio no tenga que recrearlas en el primer arranque; el resto
+        # —proyectos, snap, archivos sueltos— no viaja.
+        local -A es_xdg=()
+        while IFS= read -r ruta; do
+            es_xdg[$ruta]=1
+            printf 'V\t%s\n' "$ruta"
+            # Los fondos de pantalla son parte del aspecto del escritorio, no
+            # datos, así que se salvan aunque vivan dentro de Imágenes.
+            for sub in "$ruta"/*; do
+                [ -d "$sub" ] || continue
+                case ${sub##*/} in
+                    Wallpapers|Wallpaper|Backgrounds|Fondos|\
+                    "Fondos de pantalla"|"Fondos de escritorio")
+                        printf 'K\t%s\n' "$sub" ;;
+                esac
+            done
+        done < <(xdg_dirs "$h" | sort -u)
+        while IFS= read -r entrada; do
+            [ -n "${es_xdg[$entrada]:-}" ] && continue
+            # MiniApps no son datos: son parte del escritorio de MiniNo.
+            case ${entrada##*/} in MiniApps) continue ;; esac
+            printf 'X\t%s\n' "$entrada"
+        done < <(find "$h" -mindepth 1 -maxdepth 1 ! -name '.*' 2>/dev/null)
+        # Y de lo oculto (que es configuración y sí se copia) solo salen los
+        # navegadores, el correo, las credenciales y los rastros de actividad.
+        for rel in "${rels[@]}"; do
+            [ -e "$h/$rel" ] && printf 'X\t%s\n' "$h/$rel"
+        done
+    done < <(homes)
+
+    # Claves de máquina del servidor SSH: identidad del equipo, no
+    # configuración reutilizable. Se regeneran en el destino.
+    for f in /etc/ssh/ssh_host_*; do
+        [ -e "$f" ] && printf 'X\t%s\n' "$f"
+    done
+    return 0
+}
+
+# Convierte una ruta en patrón de rsync. rsync interpreta *, ? y [ como
+# comodines, así que hay que protegerlos para que una ruta con corchetes no
+# excluya de más.
+patron() {
+    local ruta=$1
+    ruta=${ruta//\[/[[]}
+    ruta=${ruta//\*/[*]}
+    ruta=${ruta//\?/[?]}
+    printf '%s\n' "$ruta"
+}
+
+# Convierte un flujo de líneas «V/X/K <TAB> ruta» en reglas de filtro.
+lineas_filtro() {
+    local tipo ruta
+    while IFS=$'\t' read -r tipo ruta; do
+        case $tipo in
+            V) printf -- '- %s/*\n' "$(patron "$ruta")" ;;
+            X) printf -- '- %s\n'   "$(patron "$ruta")" ;;
+        esac
+    done
+}
+
+# Escribe en $1 el fichero de filtros de rsync. $2 = 1 si se copian los datos
+# personales; $3 (opcional) = fichero con la salida ya calculada de datos_rutas.
+#
+# Las reglas «+» van todas delante: rsync aplica la primera que casa, así que
+# una inclusión escrita detrás de la exclusión que la tapa no se vería nunca.
+generar_filtros() {
+    local fichero=$1 copiar_datos=$2 datos=${3:-} tipo ruta
+    : > "$fichero"
+
+    if [ "$copiar_datos" != 1 ]; then
+        [ -n "$datos" ] || { datos=$(mktemp); datos_rutas > "$datos"; }
+        while IFS=$'\t' read -r tipo ruta; do
+            [ "$tipo" = K ] || continue
+            printf -- '+ %s/***\n' "$(patron "$ruta")"
+        done < "$datos" >> "$fichero"
+    fi
+
+    sed 's/^/- /' >> "$fichero" <<'EOF'
+/proc/*
+/sys/*
+/dev/*
+/run/*
+/tmp/*
+/var/tmp/*
+/mnt/*
+/media/*
+/boot/efi/*
+/lost+found
+/swapfile
+/swap.img
+/var/swapfile
+/var/lib/snapd/snaps/*
+/var/lib/snapd/mount/*
+/var/cache/apt/archives/*.deb
+/home/*/.cache/*
+/root/.cache/*
+/home/*/.thumbnails/*
+/home/*/.local/share/Trash/*
+/root/.local/share/Trash/*
+/home/*/.var/app/*/cache/*
+EOF
+    [ "$copiar_datos" = 1 ] && return 0
+    secretos_red_rutas | lineas_filtro >> "$fichero"
+    lineas_filtro < "$datos" >> "$fichero"
+    return 0
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Modo inspect: inventario de destinos y espacio necesario
+# ═════════════════════════════════════════════════════════════════════════════
+
+# Espacio ocupado por todo lo que se va a copiar. Se suma lo usado en cada
+# sistema de archivos que rsync va a recorrer (df es instantáneo; un du de todo
+# el sistema tardaría minutos y aquí no compensa).
+usado_total() {
+    local target fstype used total=0
+    while read -r target fstype used; do
+        case $target in
+            /proc*|/sys*|/dev*|/run*|/tmp*|/var/tmp*|/mnt*|/media*|/boot/efi*|/snap*|/var/snap*)
+                continue ;;
+        esac
+        case $fstype in
+            ext2|ext3|ext4|xfs|btrfs|f2fs|jfs|reiserfs|ntfs|ntfs3|fuseblk|vfat|exfat) ;;
+            *) continue ;;
+        esac
+        [ -n "$used" ] && total=$(( total + used ))
+    done < <(findmnt --real -bnro TARGET,FSTYPE,USED 2>/dev/null)
+    printf '%s\n' "$total"
+}
+
+# Suma el espacio en disco de las rutas que llegan por la entrada estándar.
+du_suma() {
+    local rutas=()
+    mapfile -t rutas
+    [ ${#rutas[@]} -eq 0 ] && { printf '0\n'; return 0; }
+    du -scB1 -- "${rutas[@]}" 2>/dev/null | tail -1 | cut -f1
+}
+
+# Tipo legible del disco al que pertenece una partición: «USB · Kingston...»
+tipo_disco() {
+    local disco=$1 tran rota rm modelo tipo
+    tran=$(lsblk -dno TRAN "$disco" 2>/dev/null | tr -d ' ')
+    rota=$(lsblk -dno ROTA "$disco" 2>/dev/null | tr -d ' ')
+    rm=$(lsblk -dno RM "$disco" 2>/dev/null | tr -d ' ')
+    modelo=$(lsblk -dno MODEL "$disco" 2>/dev/null | sed 's/  */ /g; s/^ *//; s/ *$//')
+    case $tran in
+        usb)  tipo=USB ;;
+        nvme) tipo="SSD NVMe" ;;
+        mmc)  tipo="MMC/SD" ;;
+        *)    if [ "$rota" = 0 ]; then tipo=SSD; else tipo=HDD; fi
+              [ "$rm" = 1 ] && tipo="$tipo *" ;;
+    esac
+    [ -n "$modelo" ] && tipo="$tipo · ${modelo:0:32}"
+    printf '%s\n' "$tipo"
+}
+
+# Partición EFI del disco indicado (por tipo de partición GUID y, si no, por
+# ser el primer vfat del disco).
+esp_de() {
+    local disco=$1 nombre
+    nombre=$(lsblk -nlo NAME,PARTTYPE "$disco" 2>/dev/null |
+             grep -i "$EFI_GUID" | awk '{print $1}' | head -n1)
+    [ -z "$nombre" ] && nombre=$(lsblk -nlo NAME,FSTYPE "$disco" 2>/dev/null |
+             grep -w vfat | awk '{print $1}' | head -n1)
+    [ -n "$nombre" ] && printf '/dev/%s\n' "$nombre"
+    return 0
+}
+
+# ¿Está vacía la partición y cuánto sitio libre tiene? Si no está montada se
+# monta un momento en solo lectura (noload evita que ext4 escriba el diario).
+estado_particion() {
+    local dev=$1 punto tmpd="" libre="" entradas estado=DESCONOCIDA
+    punto=$(findmnt -no TARGET "$dev" 2>/dev/null | head -1)
+    if [ -z "$punto" ]; then
+        tmpd=$(mktemp -d /media/traspasa_ojeada.XXXXXX) || { printf -- '-\tDESCONOCIDA\n'; return 0; }
+        if mount -o ro,noload "$dev" "$tmpd" 2>/dev/null ||
+           mount -o ro "$dev" "$tmpd" 2>/dev/null; then
+            punto=$tmpd
+        else
+            rmdir "$tmpd" 2>/dev/null
+            printf -- '-\tDESCONOCIDA\n'
+            return 0
+        fi
+    fi
+    libre=$(df -B1 --output=avail "$punto" 2>/dev/null | tail -1 | tr -d ' ')
+    entradas=$(ls -A "$punto" 2>/dev/null | grep -cvE '^(lost\+found|\.Trash-[0-9]+|System Volume Information|\$RECYCLE\.BIN)$')
+    if [ "${entradas:-1}" -eq 0 ]; then estado=VACIA; else estado=USADA; fi
+    if [ -n "$tmpd" ]; then
+        umount "$tmpd" 2>/dev/null
+        rmdir "$tmpd" 2>/dev/null
+    fi
+    printf '%s\t%s\n' "${libre:--}" "$estado"
+}
+
+inspect() {
+    local raiz_dev linea libre estado esp disco tipo
+    local NAME TYPE FSTYPE SIZE LABEL PARTTYPE MOUNTPOINT PKNAME
+
+    raiz_dev=$(findmnt -no SOURCE / 2>/dev/null)
+    raiz_dev=$(realpath "$raiz_dev" 2>/dev/null || printf '%s' "$raiz_dev")
+
+    while IFS= read -r linea; do
+        NAME=""; TYPE=""; FSTYPE=""; SIZE=""; LABEL=""
+        PARTTYPE=""; MOUNTPOINT=""; PKNAME=""
+        eval "$linea"
+        [ "$TYPE" = part ] || continue
+        [ "$(realpath "$NAME" 2>/dev/null)" = "$raiz_dev" ] && continue
+        # Fuera lo que no puede ser destino: la ESP, el intercambio, los
+        # contenedores cifrados o de LVM y lo que sostiene el sistema vivo.
+        case ${PARTTYPE,,} in "$EFI_GUID") continue ;; esac
+        case $FSTYPE in swap|crypto_LUKS|LVM2_member|linux_raid_member) continue ;; esac
+        case $MOUNTPOINT in /|/boot|/boot/*|/home|/usr|/var|/var/*) continue ;; esac
+        [ -z "$PKNAME" ] && continue
+
+        case $PKNAME in /*) disco=$PKNAME ;; *) disco=/dev/$PKNAME ;; esac
+        tipo=$(tipo_disco "$disco")
+        esp=$(esp_de "$disco"); [ -z "$esp" ] && esp=-
+        IFS=$'\t' read -r libre estado < <(estado_particion "$NAME")
+
+        printf 'PART\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$NAME" "$tipo" "$SIZE" "${FSTYPE:--}" "${LABEL:--}" \
+            "$libre" "$estado" "$esp"
+    done < <(lsblk -Pno NAME,TYPE,FSTYPE,SIZE,LABEL,PARTTYPE,MOUNTPOINT,PKNAME -p 2>/dev/null)
+
+    # Los datos personales se miden una sola vez: lo que se deja fuera menos lo
+    # que se rescata de dentro (los fondos de pantalla).
+    local datos fuera dentro
+    datos=$(mktemp)
+    datos_rutas > "$datos"
+    fuera=$(grep -v '^K' "$datos" | cut -f2- | sort -u | du_suma)
+    dentro=$(grep '^K' "$datos" | cut -f2- | sort -u | du_suma)
+    rm -f "$datos"
+    [ "$dentro" -gt "$fuera" ] && dentro=$fuera
+
+    printf 'SIZE\t%s\t%s\t%s\n' \
+        "$(usado_total)" \
+        "$(basura_rutas | du_suma)" \
+        "$(( fuera - dentro ))"
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  Modo run: el traspaso
+# ═════════════════════════════════════════════════════════════════════════════
+
+# Busca un binario dentro del árbol del destino sin entrar en el chroot, que
+# tiene un PATH mínimo y no siempre lo encuentra.
+bin_destino() {
+    local bin=$1 dir
+    for dir in usr/sbin usr/bin sbin bin; do
+        [ -x "${MP}/${dir}/${bin}" ] && { printf '/%s/%s\n' "$dir" "$bin"; return 0; }
+    done
+    return 1
+}
+
+en_chroot() {
+    chroot "$MP" env PATH=/usr/sbin:/usr/bin:/sbin:/bin "$@"
+}
+
+copiar() {
+    local filtros=$1 rc_file=$2 pct_previo=-1 pct mapeado n=0
+    local -a campos
+
+    t SCAN
+    # -aAXH conserva permisos, ACL, atributos extendidos y enlaces duros.
+    # --no-inc-recursive hace que rsync calcule la lista completa antes de
+    # empezar: tarda un poco más en arrancar, pero es lo que permite que el
+    # porcentaje de la barra signifique algo.
+    # Sin --delete: es una actualización, nunca se borra en el destino nada que
+    # el usuario pudiera tener allí.
+    {
+        rsync -aAXH --info=progress2 --no-inc-recursive --outbuf=L \
+              --filter=". $filtros" / "${MP}/"
+        printf '%s\n' $? > "$rc_file"
+    } | tr '\r' '\n' | {
+        while IFS= read -r linea; do
+            read -ra campos <<< "$linea"
+            [ ${#campos[@]} -ge 3 ] || continue
+            case ${campos[1]} in *%) pct=${campos[1]%\%} ;; *) continue ;; esac
+            case $pct in ''|*[!0-9]*) continue ;; esac
+            mapeado=$(( 6 + pct * 74 / 100 ))
+            n=$(( n + 1 ))
+            if [ "$mapeado" != "$pct_previo" ] || [ $(( n % 40 )) -eq 0 ]; then
+                pct_previo=$mapeado
+                p "$mapeado"
+                t RSYNC "${campos[0]} · ${campos[2]}"
+            fi
+        done
+    }
+}
+
+run() {
+    local dev=$1 copiar_datos=$2
+    local raiz_dev disco esp fs_dest uuid_dest uuid_esp
+    local filtros rc_file rc esp_montada=0 bin
+
+    trap 'limpiar' EXIT PIPE INT TERM
+
+    p 1; t PREP
+
+    [ -b "$dev" ] || e NODEV
+    raiz_dev=$(realpath "$(findmnt -no SOURCE /)" 2>/dev/null)
+    [ "$(realpath "$dev" 2>/dev/null)" = "$raiz_dev" ] && e ESRAIZ
+
+    fs_dest=$(lsblk -no FSTYPE "$dev" | tr -d ' ')
+    case $fs_dest in ext2|ext3|ext4|xfs|btrfs|f2fs) ;; *) e NOFS ;; esac
+
+    disco=$(lsblk -no PKNAME "$dev" | tr -d ' ')
+    [ -n "$disco" ] || e NODEV
+    disco=/dev/$disco
+    esp=$(esp_de "$disco")
+    [ -n "$esp" ] || e NOEFI
+
+    uuid_dest=$(lsblk -no UUID "$dev" | tr -d ' ')
+    uuid_esp=$(lsblk -no UUID "$esp" | tr -d ' ')
+    [ -n "$uuid_dest" ] || e NOUUID
+    [ -n "$uuid_esp" ] || e NOUUID
+
+    log "Destino:  $dev (UUID=$uuid_dest, $fs_dest)"
+    log "Disco:    $disco"
+    log "ESP:      $esp (UUID=$uuid_esp)"
+    log "Datos personales: $([ "$copiar_datos" = 1 ] && echo sí || echo no)"
+
+    # ── 1. Montar el destino ────────────────────────────────────────────────
+    p 3; t MOUNT
+    mkdir -p "$MP"
+    umount "$dev" 2>/dev/null
+    mount "$dev" "$MP" || e NOMOUNT
+
+    # ── 2. Copia incremental ────────────────────────────────────────────────
+    p 5
+    filtros=$(mktemp) || e GENERICO
+    rc_file=$(mktemp) || e GENERICO
+    generar_filtros "$filtros" "$copiar_datos"
+    log "── Filtros ──"; log "$(cat "$filtros")"; log "── Copia ──"
+
+    copiar "$filtros" "$rc_file"
+    rc=$(cat "$rc_file" 2>/dev/null); rc=${rc:-1}
+    rm -f "$filtros" "$rc_file"
+    # 24 = «algún archivo desapareció mientras se copiaba»: normal en un sistema
+    # en marcha y no invalida la copia.
+    case $rc in 0|24) ;; *) log "rsync terminó con el código $rc"; e RSYNC ;; esac
+
+    # ── 3. fstab del sistema nuevo ──────────────────────────────────────────
+    p 81; t FSTAB
+    cat > "${MP}/etc/fstab" <<EOF
+# /etc/fstab generado por la MiniApp «Traspasa»
+# <sistema de archivos> <punto de montaje> <tipo> <opciones> <dump> <pass>
+UUID=${uuid_dest} /         ${fs_dest} errors=remount-ro,noatime 0 1
+UUID=${uuid_esp}  /boot/efi vfat       umask=0077                0 2
+EOF
+
+    # ── 4. Opciones de arranque para rEFInd ─────────────────────────────────
+    p 83; t BOOTCONF
+    mkdir -p "${MP}/boot"
+    cat > "${MP}/boot/refind_linux.conf" <<EOF
+"Arranque estándar"  "ro root=UUID=${uuid_dest} quiet splash"
+"Modo terminal"      "ro root=UUID=${uuid_dest} quiet splash 3"
+"Modo recuperación"  "ro root=UUID=${uuid_dest} single"
+EOF
+
+    # ── 5. Identidad propia para el sistema clonado ─────────────────────────
+    p 85; t IDENT
+    [ -f "${MP}/etc/machine-id" ] && truncate -s 0 "${MP}/etc/machine-id"
+    rm -f "${MP}/var/lib/dbus/machine-id"
+
+    # ── 6. Montajes de sistema para trabajar dentro del destino ─────────────
+    mount -t proc  /proc "${MP}/proc" 2>/dev/null
+    mount -t sysfs /sys  "${MP}/sys"  2>/dev/null
+    mount --bind   /dev  "${MP}/dev"  2>/dev/null
+    mount --bind   /run  "${MP}/run"  2>/dev/null
+    if mount "$esp" "${MP}/boot/efi" 2>/dev/null; then
+        esp_montada=1
+    else
+        log "No se pudo montar $esp en ${MP}/boot/efi; se omitirá grub-install."
+    fi
+
+    # Si no se copiaron los datos personales tampoco fueron las claves de
+    # máquina del servidor SSH, así que el destino estrena las suyas.
+    if [ "$copiar_datos" != 1 ] && [ -d "${MP}/etc/ssh" ]; then
+        if bin=$(bin_destino ssh-keygen); then
+            t SSHKEYS
+            en_chroot "$bin" -A >&2 || log "ssh-keygen -A falló (sin importancia si no usa servidor SSH)."
+        fi
+    fi
+
+    # ── 7. initramfs genérico ───────────────────────────────────────────────
+    # dracut en modo «hostonly» graba el UUID de la raíz DENTRO del initramfs y
+    # ese valor pisa el root=UUID que pasa rEFInd: el sistema clonado no
+    # encontraría su disco. Se fuerza el modo genérico y se limpia cualquier
+    # cmdline.d heredado del sistema de origen.
+    p 87; t INITRAMFS
+    if bin=$(bin_destino dracut); then
+        rm -f "${MP}/etc/cmdline.d/"*.conf 2>/dev/null
+        mkdir -p "${MP}/etc/dracut.conf.d"
+        cat > "${MP}/etc/dracut.conf.d/00-traspasa-generic.conf" <<'EOF'
+# Generado por la MiniApp «Traspasa» — se borra al terminar.
+hostonly=no
+hostonly_cmdline=no
+EOF
+        en_chroot "$bin" --regenerate-all --force --no-hostonly >&2 ||
+            log "dracut falló: el sistema de destino puede no arrancar."
+        rm -f "${MP}/etc/dracut.conf.d/00-traspasa-generic.conf"
+    elif bin=$(bin_destino update-initramfs); then
+        # MODULES=most genera un initramfs universal, no atado a este equipo.
+        if [ -f "${MP}/etc/initramfs-tools/initramfs.conf" ]; then
+            sed -i 's/^MODULES=dep/MODULES=most/' "${MP}/etc/initramfs-tools/initramfs.conf"
+            grep -q '^MODULES=most' "${MP}/etc/initramfs-tools/initramfs.conf" ||
+                printf 'MODULES=most\n' >> "${MP}/etc/initramfs-tools/initramfs.conf"
+        fi
+        en_chroot "$bin" -u -k all >&2 ||
+            log "update-initramfs falló: el sistema de destino puede no arrancar."
+    else
+        log "No hay dracut ni update-initramfs en el destino: no se reconstruyó el initramfs."
+    fi
+
+    # ── 8. grub.cfg apuntando al UUID del destino ───────────────────────────
+    # El grub.cfg copiado busca el UUID del sistema de origen y sin regenerarlo
+    # el arranque cae al prompt de rescate. --no-nvram evita crear una entrada
+    # UEFI que compita con rEFInd.
+    p 90; t GRUB
+    if bin=$(bin_destino update-grub); then
+        local grub_install
+        if [ "$esp_montada" = 1 ] && grub_install=$(bin_destino grub-install); then
+            en_chroot "$grub_install" --target=x86_64-efi --efi-directory=/boot/efi \
+                --bootloader-id=ubuntu --no-nvram --force >&2 ||
+                log "grub-install falló; se regenera solo grub.cfg."
+        fi
+        en_chroot "$bin" >&2 || log "update-grub falló: el menú de GRUB puede no funcionar."
+    else
+        log "No hay update-grub en el destino: grub.cfg no se ha regenerado."
+    fi
+
+    umount "${MP}/boot/efi" 2>/dev/null
+    umount "${MP}/run"  2>/dev/null
+    umount "${MP}/dev"  2>/dev/null
+    umount "${MP}/sys"  2>/dev/null
+    umount "${MP}/proc" 2>/dev/null
+
+    # ── 9. rEFInd en la partición EFI del disco de destino ──────────────────
+    p 93; t REFIND
+    if command -v refind-install >/dev/null 2>&1; then
+        refind-install --usedefault "$esp" --alldrivers >&2 ||
+            log "refind-install falló: revise el registro."
+    else
+        log "refind-install no está disponible: no se instaló el gestor de arranque."
+    fi
+
+    # ── 10. Entradas UEFI antiguas de ESTA misma ESP ────────────────────────
+    # rEFInd se instala en la ruta de reserva (\EFI\BOOT\BOOTX64.EFI) y no toca
+    # la NVRAM, para que sirva también en medios extraíbles. Si esta ESP tenía
+    # ya una entrada NVRAM propia, en algunos firmwares gana la carrera y
+    # arrancaría GRUB en vez de rEFInd.
+    p 96; t NVRAM
+    if command -v efibootmgr >/dev/null 2>&1; then
+        local partuuid entradas num
+        partuuid=$(lsblk -no PARTUUID "$esp" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+        if [ -n "$partuuid" ]; then
+            entradas=$(efibootmgr -v 2>/dev/null | grep -i "$partuuid" | grep -iv refind |
+                       grep -oP '^Boot\K[0-9A-Fa-f]{4}')
+            for num in $entradas; do
+                efibootmgr -b "$num" -B >&2 && log "Eliminada la entrada UEFI Boot${num} de ${esp}."
+            done
+        fi
+    else
+        log "efibootmgr no disponible: no se revisaron las entradas UEFI."
+    fi
+
+    # ── 11. Cerrar ──────────────────────────────────────────────────────────
+    p 98; t SYNC
+    sync
+    umount "$MP" 2>/dev/null
+    p 100; t FIN
+    return 0
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+
+# Una sola sesión con privilegios para todo el trabajo: primero el inventario y
+# después, cuando AppRun ha preguntado lo que tenía que preguntar, el traspaso.
+# Así solo se pide la contraseña una vez.
+#
+# La orden llega por la entrada estándar (una tubería con nombre que solo puede
+# abrir quien ya autorizó esta sesión) y se valida antes de hacerle caso: si no
+# es un RUN bien formado sobre un dispositivo de bloques real, no se toca nada.
+session() {
+    local linea orden dev datos
+
+    # Señal de vida antes de ponerse a trabajar: llega en cuanto pkexec ha
+    # concedido los privilegios, y es lo que le dice a AppRun que ya puede
+    # enseñar la ventana de progreso. Antes de esto no hay nada que enseñar,
+    # porque el sistema todavía está pidiendo la contraseña.
+    printf 'GO\n'
+
+    inspect
+    printf 'READY\n'
+
+    IFS= read -r linea || return 0
+    IFS=$'\t' read -r orden dev datos <<< "$linea"
+    [ "$orden" = RUN ] || return 0
+
+    case $dev in /dev/*) ;; *) e NODEV ;; esac
+    case $dev in *[^[:alnum:]/_-]*) e NODEV ;; esac
+    [ -b "$dev" ] || e NODEV
+    case $datos in 0|1) ;; *) e GENERICO ;; esac
+
+    run "$dev" "$datos"
+}
+
+case ${1:-} in
+    session) session ;;
+    inspect) inspect ;;
+    run)     [ $# -ge 3 ] || e GENERICO
+             run "$2" "$3" ;;
+    *)       e GENERICO ;;
+esac

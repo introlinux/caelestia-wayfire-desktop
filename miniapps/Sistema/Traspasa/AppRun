@@ -1,0 +1,425 @@
+#!/bin/bash
+# Traspasa — copia el sistema instalado a otra partición y la deja arrancable
+# por UEFI (rEFInd). La copia es siempre incremental: si la partición está
+# vacía se copia todo y si ya tiene una copia solo se actualiza lo que cambió.
+# El trabajo con privilegios lo hace traspasa-worker, en esta misma carpeta.
+set -u
+
+DIR=$(dirname "$(readlink -f "$0")")
+WORKER="$DIR/traspasa-worker"
+
+case $LANG in
+    es*) T_TITLE="Traspasa"
+         T_NOUEFI="Este equipo no arrancó en modo UEFI, así que no se puede preparar el arranque del sistema traspasado.\n\nArranque en modo UEFI y vuelva a intentarlo."
+         T_NOTOOL="Falta una herramienta necesaria:"
+         T_ANALIZA="Analizando el sistema y las particiones…\nSe está calculando el espacio necesario."
+         T_ERRINSPECT="No se pudo analizar el sistema. ¿Se canceló la autenticación?"
+         T_NOPART="No se encontró ninguna partición que pueda recibir el sistema.\n\nPrepare (particione y formatee) el disco de destino antes de usar esta aplicación."
+         T_SELTEXT="Elija la partición de destino. Se copiará el sistema y quedará arrancable.\n\nEspacio necesario: %s solo el sistema · %s con los datos personales"
+         C_PART="Partición" C_DEV="Dispositivo" C_SIZE="Tamaño" C_FS="Formato"
+         C_LABEL="Etiqueta" C_FREE="Libre" C_STATE="Estado"
+         T_VACIA="★ vacía" T_CONDATOS="con datos" T_DESCONOCIDA="sin comprobar"
+         T_SINFORMATO="sin formatear" T_SINLINUX="formato no válido" T_SINEFI="disco sin partición EFI"
+         T_ERRSINFORMATO="La partición %s no tiene ningún sistema de archivos.\n\nFormatéela (por ejemplo en ext4) antes de traspasar el sistema."
+         T_ERRSINLINUX="La partición %s está formateada en %s y no puede alojar un sistema Linux: se perderían los permisos y los enlaces.\n\nFormatéela en ext4 antes de traspasar el sistema."
+         T_ERRSINEFI="El disco de %s no tiene partición EFI, así que el sistema traspasado no podría arrancar.\n\nElija una partición de un disco que tenga partición EFI."
+         T_QDATOS="¿Qué se traspasa?"
+         T_QDATOSTXT="El sistema y su personalización (temas, iconos, fondos, tipografías y ajustes) se copian siempre.\n\nElija si se copian también sus datos:"
+         O_SOLO="Solo el sistema — %s"
+         O_SOLODESC="Sin carpetas personales, navegadores, correo, contraseñas ni redes Wi-Fi"
+         O_TODO="Sistema y datos personales — %s"
+         O_TODODESC="Copia también sus archivos, navegadores, correo, contraseñas y redes Wi-Fi"
+         C_OPT="Contenido" C_OPTDESC="Qué incluye"
+         T_POCOESPACIO="En %s solo hay %s libres y hacen falta unos %s.\n\n¿Quiere intentarlo de todas formas?"
+         T_CONFIRMTIT="Confirme el traspaso"
+         T_CONFIRM="Se va a traspasar el sistema a:\n\n<b>%s</b>  (%s, %s%s)\n\nContenido: <b>%s</b>\nEspacio necesario: %s · libre: %s\n\n%s\n\nEn el destino se sobrescribirán los archivos que tengan el mismo nombre; el resto no se toca. Se instalará el gestor de arranque rEFInd en la partición EFI de ese disco y se retirarán sus entradas de arranque UEFI antiguas.\n\n¿Comenzar?"
+         N_SOLO="No viajan sus carpetas personales, ni los navegadores, ni el correo, ni las contraseñas guardadas, ni las claves de las redes Wi-Fi."
+         N_TODO="Viaja todo, incluidas las contraseñas guardadas y las claves de las redes Wi-Fi: quien use el equipo de destino tendrá acceso a ellas."
+         N_FIN="\n\nLas redes Wi-Fi habrá que volver a conectarlas: sus claves no viajan con el sistema."
+         T_GO="Traspasar" T_NO="Cancelar"
+         T_PREP="Comprobando el destino…"
+         T_MOUNT="Montando la partición de destino…"
+         T_SCAN="Preparando la lista de archivos (puede tardar unos minutos)…"
+         T_RSYNC="Copiando el sistema…"
+         T_FSTAB="Generando el /etc/fstab del sistema nuevo…"
+         T_BOOTCONF="Configurando las opciones de arranque…"
+         T_IDENT="Renovando la identidad del sistema copiado…"
+         T_SSHKEYS="Generando claves nuevas del servidor SSH…"
+         T_INITRAMFS="Reconstruyendo el initramfs (esto tarda un poco)…"
+         T_GRUB="Regenerando la configuración de GRUB…"
+         T_REFIND="Instalando el gestor de arranque rEFInd…"
+         T_NVRAM="Revisando las entradas de arranque UEFI…"
+         T_SYNCP="Escribiendo en el disco los datos pendientes…"
+         T_FIN="Terminado"
+         T_CANCELADO="Traspaso cancelado.\n\nLo copiado se conserva en el destino: si vuelve a lanzar la aplicación, continuará donde lo dejó."
+         T_OKTIT="Traspaso completado"
+         T_OK="El sistema se traspasó a <b>%s</b>.\n\nTiempo empleado: <b>%s</b>\n\nYa puede reiniciar y elegir ese disco en el menú de arranque del equipo."
+         T_ERRTIT="El traspaso no se completó"
+         T_ERRLOG="Detalles en el registro:"
+         T_ERRTIEMPO="Tiempo transcurrido:"
+         E_NODEV="La partición de destino ya no está disponible."
+         E_ESRAIZ="La partición de destino es la raíz del sistema en marcha."
+         E_NOFS="La partición de destino no tiene un formato válido para Linux."
+         E_NOEFI="El disco de destino no tiene partición EFI."
+         E_NOUUID="No se pudo leer el UUID de la partición de destino o de la partición EFI."
+         E_NOMOUNT="No se pudo montar la partición de destino. ¿Está en uso?"
+         E_RSYNC="Falló la copia de archivos."
+         E_GENERICO="Se produjo un error inesperado."
+         T_HORA="h" T_MIN="min" T_SEG="s" ;;
+    gl*) T_TITLE="Traspasa"
+         T_NOUEFI="Este equipo non arrincou en modo UEFI, así que non se pode preparar o arranque do sistema traspasado.\n\nArrinque en modo UEFI e ténteo de novo."
+         T_NOTOOL="Falta unha ferramenta necesaria:"
+         T_ANALIZA="Analizando o sistema e as particións…\nEstase a calcular o espazo necesario."
+         T_ERRINSPECT="Non se puido analizar o sistema. Cancelouse a autenticación?"
+         T_NOPART="Non se atopou ningunha partición que poida recibir o sistema.\n\nPrepare (particione e formate) o disco de destino antes de usar este aplicativo."
+         T_SELTEXT="Escolla a partición de destino. Copiarase o sistema e quedará arrincable.\n\nEspazo necesario: %s só o sistema · %s cos datos persoais"
+         C_PART="Partición" C_DEV="Dispositivo" C_SIZE="Tamaño" C_FS="Formato"
+         C_LABEL="Etiqueta" C_FREE="Libre" C_STATE="Estado"
+         T_VACIA="★ baleira" T_CONDATOS="con datos" T_DESCONOCIDA="sen comprobar"
+         T_SINFORMATO="sen formatar" T_SINLINUX="formato non válido" T_SINEFI="disco sen partición EFI"
+         T_ERRSINFORMATO="A partición %s non ten ningún sistema de ficheiros.\n\nFórmatea (por exemplo en ext4) antes de traspasar o sistema."
+         T_ERRSINLINUX="A partición %s está formatada en %s e non pode aloxar un sistema Linux: perderíanse os permisos e as ligazóns.\n\nFórmatea en ext4 antes de traspasar o sistema."
+         T_ERRSINEFI="O disco de %s non ten partición EFI, así que o sistema traspasado non podería arrincar.\n\nEscolla unha partición dun disco que teña partición EFI."
+         T_QDATOS="Que se traspasa?"
+         T_QDATOSTXT="O sistema e a súa personalización (temas, iconas, fondos, tipografías e axustes) cópianse sempre.\n\nEscolla se se copian tamén os seus datos:"
+         O_SOLO="Só o sistema — %s"
+         O_SOLODESC="Sen cartafoles persoais, navegadores, correo, contrasinais nin redes Wi-Fi"
+         O_TODO="Sistema e datos persoais — %s"
+         O_TODODESC="Copia tamén os seus ficheiros, navegadores, correo, contrasinais e redes Wi-Fi"
+         C_OPT="Contido" C_OPTDESC="Que inclúe"
+         T_POCOESPACIO="En %s só hai %s libres e fan falla uns %s.\n\nQuere tentalo de todos os xeitos?"
+         T_CONFIRMTIT="Confirme o traspaso"
+         T_CONFIRM="Vaise traspasar o sistema a:\n\n<b>%s</b>  (%s, %s%s)\n\nContido: <b>%s</b>\nEspazo necesario: %s · libre: %s\n\n%s\n\nNo destino sobrescribiranse os ficheiros co mesmo nome; o resto non se toca. Instalarase o xestor de arranque rEFInd na partición EFI dese disco e retiraranse as súas entradas de arranque UEFI antigas.\n\nComezar?"
+         N_SOLO="Non viaxan os seus cartafoles persoais, nin os navegadores, nin o correo, nin os contrasinais gardados, nin as claves das redes Wi-Fi."
+         N_TODO="Viaxa todo, incluídos os contrasinais gardados e as claves das redes Wi-Fi: quen use o equipo de destino terá acceso a elas."
+         N_FIN="\n\nÁs redes Wi-Fi haberá que volver conectarse: as súas claves non viaxan co sistema."
+         T_GO="Traspasar" T_NO="Cancelar"
+         T_PREP="Comprobando o destino…"
+         T_MOUNT="Montando a partición de destino…"
+         T_SCAN="Preparando a lista de ficheiros (pode tardar uns minutos)…"
+         T_RSYNC="Copiando o sistema…"
+         T_FSTAB="Xerando o /etc/fstab do sistema novo…"
+         T_BOOTCONF="Configurando as opcións de arranque…"
+         T_IDENT="Renovando a identidade do sistema copiado…"
+         T_SSHKEYS="Xerando chaves novas do servidor SSH…"
+         T_INITRAMFS="Reconstruíndo o initramfs (isto tarda un pouco)…"
+         T_GRUB="Rexerando a configuración do GRUB…"
+         T_REFIND="Instalando o xestor de arranque rEFInd…"
+         T_NVRAM="Revisando as entradas de arranque UEFI…"
+         T_SYNCP="Escribindo no disco os datos pendentes…"
+         T_FIN="Rematado"
+         T_CANCELADO="Traspaso cancelado.\n\nO copiado consérvase no destino: se volve lanzar o aplicativo, continuará onde o deixou."
+         T_OKTIT="Traspaso completado"
+         T_OK="O sistema traspasouse a <b>%s</b>.\n\nTempo empregado: <b>%s</b>\n\nXa pode reiniciar e escoller ese disco no menú de arranque do equipo."
+         T_ERRTIT="O traspaso non se completou"
+         T_ERRLOG="Detalles no rexistro:"
+         T_ERRTIEMPO="Tempo transcorrido:"
+         E_NODEV="A partición de destino xa non está dispoñible."
+         E_ESRAIZ="A partición de destino é a raíz do sistema en marcha."
+         E_NOFS="A partición de destino non ten un formato válido para Linux."
+         E_NOEFI="O disco de destino non ten partición EFI."
+         E_NOUUID="Non se puido ler o UUID da partición de destino ou da partición EFI."
+         E_NOMOUNT="Non se puido montar a partición de destino. Está en uso?"
+         E_RSYNC="Fallou a copia de ficheiros."
+         E_GENERICO="Produciuse un erro inesperado."
+         T_HORA="h" T_MIN="min" T_SEG="s" ;;
+    *)   T_TITLE="Traspasa"
+         T_NOUEFI="This computer did not boot in UEFI mode, so the transferred system cannot be made bootable.\n\nBoot in UEFI mode and try again."
+         T_NOTOOL="A required tool is missing:"
+         T_ANALIZA="Scanning the system and the partitions…\nWorking out how much room is needed."
+         T_ERRINSPECT="The system could not be scanned. Was authentication cancelled?"
+         T_NOPART="No partition able to receive the system was found.\n\nPartition and format the destination disk before using this application."
+         T_SELTEXT="Choose the destination partition. The system will be copied there and made bootable.\n\nRoom needed: %s system only · %s with personal data"
+         C_PART="Partition" C_DEV="Device" C_SIZE="Size" C_FS="Format"
+         C_LABEL="Label" C_FREE="Free" C_STATE="State"
+         T_VACIA="★ empty" T_CONDATOS="has data" T_DESCONOCIDA="not checked"
+         T_SINFORMATO="not formatted" T_SINLINUX="unsuitable format" T_SINEFI="disk without EFI partition"
+         T_ERRSINFORMATO="Partition %s has no file system.\n\nFormat it (ext4, for instance) before transferring the system."
+         T_ERRSINLINUX="Partition %s is formatted as %s and cannot hold a Linux system: permissions and links would be lost.\n\nFormat it as ext4 before transferring the system."
+         T_ERRSINEFI="The disk holding %s has no EFI partition, so the transferred system could not boot.\n\nChoose a partition on a disk that has an EFI partition."
+         T_QDATOS="What gets transferred?"
+         T_QDATOSTXT="The system and its look (themes, icons, wallpapers, fonts and settings) are always copied.\n\nChoose whether your data comes along:"
+         O_SOLO="System only — %s"
+         O_SOLODESC="No personal folders, browsers, mail, passwords or Wi-Fi networks"
+         O_TODO="System and personal data — %s"
+         O_TODODESC="Also copies your files, browsers, mail, passwords and Wi-Fi networks"
+         C_OPT="Contents" C_OPTDESC="What it includes"
+         T_POCOESPACIO="%s only has %s free and about %s is needed.\n\nTry anyway?"
+         T_CONFIRMTIT="Confirm the transfer"
+         T_CONFIRM="The system will be transferred to:\n\n<b>%s</b>  (%s, %s%s)\n\nContents: <b>%s</b>\nRoom needed: %s · free: %s\n\n%s\n\nFiles with the same name will be overwritten on the destination; nothing else is touched. The rEFInd boot manager will be installed on that disk's EFI partition and its old UEFI boot entries will be removed.\n\nStart?"
+         N_SOLO="Your personal folders, browsers, mail, saved passwords and Wi-Fi keys stay behind."
+         N_TODO="Everything travels, including saved passwords and Wi-Fi keys: whoever uses the destination computer will have access to them."
+         N_FIN="\n\nYou will need to reconnect your Wi-Fi networks: their passwords do not travel with the system."
+         T_GO="Transfer" T_NO="Cancel"
+         T_PREP="Checking the destination…"
+         T_MOUNT="Mounting the destination partition…"
+         T_SCAN="Building the file list (this may take a few minutes)…"
+         T_RSYNC="Copying the system…"
+         T_FSTAB="Writing the new /etc/fstab…"
+         T_BOOTCONF="Setting up the boot options…"
+         T_IDENT="Giving the copied system its own identity…"
+         T_SSHKEYS="Generating new SSH server keys…"
+         T_INITRAMFS="Rebuilding the initramfs (this takes a while)…"
+         T_GRUB="Regenerating the GRUB configuration…"
+         T_REFIND="Installing the rEFInd boot manager…"
+         T_NVRAM="Checking the UEFI boot entries…"
+         T_SYNCP="Flushing pending data to the disk…"
+         T_FIN="Finished"
+         T_CANCELADO="Transfer cancelled.\n\nWhat was copied stays on the destination: run the application again and it will carry on where it stopped."
+         T_OKTIT="Transfer completed"
+         T_OK="The system was transferred to <b>%s</b>.\n\nTime taken: <b>%s</b>\n\nYou can now restart and pick that disk in the computer's boot menu."
+         T_ERRTIT="The transfer did not complete"
+         T_ERRLOG="Details in the log:"
+         T_ERRTIEMPO="Time elapsed:"
+         E_NODEV="The destination partition is no longer available."
+         E_ESRAIZ="The destination partition is the running system's root."
+         E_NOFS="The destination partition has no valid format for Linux."
+         E_NOEFI="The destination disk has no EFI partition."
+         E_NOUUID="The UUID of the destination or EFI partition could not be read."
+         E_NOMOUNT="The destination partition could not be mounted. Is it in use?"
+         E_RSYNC="The file copy failed."
+         E_GENERICO="An unexpected error occurred."
+         T_HORA="h" T_MIN="min" T_SEG="s" ;;
+esac
+
+aviso() { zenity --error --title="$T_TITLE" --width=420 --text="$1"; }
+
+humaniza() {
+    local b=${1:-0}
+    case $b in ''|*[!0-9]*) printf -- '—\n'; return ;; esac
+    numfmt --to=iec-i --suffix=B --format='%.1f' "$b" 2>/dev/null |
+        sed 's/\([0-9]\)\([KMGTPE]\)/\1 \2/' || printf '%s B\n' "$b"
+}
+
+duracion() {
+    local s=$1 h m
+    h=$(( s / 3600 )); m=$(( (s % 3600) / 60 )); s=$(( s % 60 ))
+    if   [ "$h" -gt 0 ]; then printf '%d %s %d %s %d %s\n' "$h" "$T_HORA" "$m" "$T_MIN" "$s" "$T_SEG"
+    elif [ "$m" -gt 0 ]; then printf '%d %s %d %s\n' "$m" "$T_MIN" "$s" "$T_SEG"
+    else                      printf '%d %s\n' "$s" "$T_SEG"
+    fi
+}
+
+# ── 0. Requisitos ────────────────────────────────────────────────────────────
+[ -d /sys/firmware/efi ] || { aviso "$T_NOUEFI"; exit 1; }
+for h in zenity pkexec rsync lsblk findmnt numfmt; do
+    command -v "$h" >/dev/null 2>&1 || { aviso "$T_NOTOOL $h"; exit 1; }
+done
+[ -x "$WORKER" ] || { aviso "$T_NOTOOL traspasa-worker"; exit 1; }
+
+tmp=$(mktemp -d) || exit 1
+trap 'rm -rf "$tmp"' EXIT
+LOG="$tmp/traspasa.log"
+INV="$tmp/inventario"
+
+# ── 1. Una sola sesión con privilegios para todo ─────────────────────────────
+# El trabajo con privilegios se hace de una vez: se abre traspasa-worker con
+# pkexec (una única contraseña) y se habla con él por dos tuberías con nombre.
+# Primero manda el inventario y espera; cuando el usuario ha respondido a los
+# diálogos, se le manda la orden y devuelve el progreso.
+mkfifo "$tmp/ent" "$tmp/sal" || exit 1
+pkexec /bin/bash "$WORKER" session <"$tmp/ent" >"$tmp/sal" 2>>"$LOG" &
+wpid=$!
+exec {FD_IN}>"$tmp/ent"
+exec {FD_OUT}<"$tmp/sal"
+
+# Si el usuario cierra en cualquier diálogo, cerrar las tuberías basta para que
+# el worker se entere y termine sin tocar nada.
+trap 'exec {FD_IN}>&- 2>/dev/null; rm -rf "$tmp"' EXIT
+
+# Mientras el sistema pide la contraseña no se enseña ninguna ventana propia:
+# una barra de progreso ahí solo confunde, porque no avanza hasta que hay
+# privilegios. Se espera a que el worker salude, que es justo cuando los tiene.
+if ! IFS= read -r linea <&$FD_OUT || [ "$linea" != GO ]; then
+    aviso "$T_ERRINSPECT"
+    exit 1
+fi
+
+(
+    while IFS= read -r linea <&$FD_OUT; do
+        [ "$linea" = READY ] && break
+        printf '%s\n' "$linea" >> "$INV"
+    done
+    echo 100
+) | zenity --progress --pulsate --auto-close --no-cancel \
+        --title="$T_TITLE" --text="$T_ANALIZA" --width=420
+
+[ -s "$INV" ] || { aviso "$T_ERRINSPECT"; exit 1; }
+
+total=0; basura=0; datos=0
+while IFS=$'\t' read -r etiqueta c1 c2 c3 _resto; do
+    [ "$etiqueta" = SIZE ] || continue
+    total=$c1; basura=$c2; datos=$c3
+done < "$INV"
+
+bytes_sistema=$(( total - basura - datos )); [ "$bytes_sistema" -lt 0 ] && bytes_sistema=0
+bytes_completo=$(( total - basura ));       [ "$bytes_completo" -lt 0 ] && bytes_completo=0
+tam_sistema=$(humaniza "$bytes_sistema")
+tam_completo=$(humaniza "$bytes_completo")
+
+# ── 2. Elección del destino ──────────────────────────────────────────────────
+filas=(); hay_vacia=0
+while IFS=$'\t' read -r etiqueta dev tipo tam fs lab libre estado esp; do
+    [ "$etiqueta" = PART ] || continue
+    case $fs in
+        -)                         nota=$T_SINFORMATO ;;
+        ext2|ext3|ext4|xfs|btrfs|f2fs)
+            if   [ "$esp" = - ];            then nota=$T_SINEFI
+            elif [ "$estado" = VACIA ];     then nota=$T_VACIA
+            elif [ "$estado" = USADA ];     then nota=$T_CONDATOS
+            else                                 nota=$T_DESCONOCIDA
+            fi ;;
+        *)                         nota=$T_SINLINUX ;;
+    esac
+    marca=FALSE
+    if [ "$hay_vacia" = 0 ] && [ "$nota" = "$T_VACIA" ]; then marca=TRUE; hay_vacia=1; fi
+    [ "$lab" = - ] && lab=""
+    filas+=("$marca" "$dev" "$tipo" "$tam" "$fs" "$lab" "$(humaniza "$libre")" "$nota")
+done < "$INV"
+
+[ ${#filas[@]} -eq 0 ] && { aviso "$T_NOPART"; exit 1; }
+
+# Se piden todas las columnas y se rescata la que es un dispositivo: así da
+# igual si zenity numera o no la columna de los botones de radio.
+seleccion=$(zenity --list --radiolist --title="$T_TITLE" \
+    --text="$(printf "$T_SELTEXT" "$tam_sistema" "$tam_completo")" \
+    --print-column=ALL --separator=$'\t' \
+    --column="" --column="$C_PART" --column="$C_DEV" --column="$C_SIZE" \
+    --column="$C_FS" --column="$C_LABEL" --column="$C_FREE" --column="$C_STATE" \
+    "${filas[@]}" --width=1020 --height=620) || exit 0
+destino=$(printf '%s' "$seleccion" | tr '\t' '\n' | grep -m1 '^/dev/')
+[ -z "$destino" ] && exit 0
+
+# Datos de la partición elegida, tal como los devolvió el inventario
+d_tipo=""; d_tam=""; d_fs=""; d_lab=""; d_libre=""; d_estado=""; d_esp=""
+while IFS=$'\t' read -r etiqueta dev tipo tam fs lab libre estado esp; do
+    [ "$etiqueta" = PART ] && [ "$dev" = "$destino" ] || continue
+    d_tipo=$tipo; d_tam=$tam; d_fs=$fs; d_lab=$lab
+    d_libre=$libre; d_estado=$estado; d_esp=$esp
+done < "$INV"
+
+case $d_fs in
+    -) aviso "$(printf "$T_ERRSINFORMATO" "$destino")"; exit 1 ;;
+    ext2|ext3|ext4|xfs|btrfs|f2fs) ;;
+    *) aviso "$(printf "$T_ERRSINLINUX" "$destino" "$d_fs")"; exit 1 ;;
+esac
+[ "$d_esp" = - ] && { aviso "$(printf "$T_ERRSINEFI" "$destino")"; exit 1; }
+
+# ── 3. ¿Con los datos personales o sin ellos? ────────────────────────────────
+opt_solo=$(printf "$O_SOLO" "$tam_sistema")
+opt_todo=$(printf "$O_TODO" "$tam_completo")
+eleccion=$(zenity --list --radiolist --title="$T_QDATOS" --text="$T_QDATOSTXT" \
+    --print-column=ALL --separator=$'\t' \
+    --column="" --column="$C_OPT" --column="$C_OPTDESC" \
+    TRUE  "$opt_solo" "$O_SOLODESC" \
+    FALSE "$opt_todo" "$O_TODODESC" \
+    --width=700 --height=380) || exit 0
+[ -z "$eleccion" ] && exit 0
+
+case $eleccion in
+    *"$opt_todo"*) copiar_datos=1; bytes_nec=$bytes_completo; contenido=$opt_todo
+                   aviso_datos=$N_TODO; nota_final="" ;;
+    *)             copiar_datos=0; bytes_nec=$bytes_sistema;  contenido=$opt_solo
+                   aviso_datos=$N_SOLO; nota_final=$N_FIN ;;
+esac
+tam_nec=$(humaniza "$bytes_nec")
+tam_libre=$(humaniza "$d_libre")
+
+# ── 4. Espacio y confirmación ────────────────────────────────────────────────
+case $d_libre in
+    ''|*[!0-9]*) ;;
+    *) if [ "$bytes_nec" -gt "$d_libre" ]; then
+           zenity --question --title="$T_TITLE" --width=440 --default-cancel \
+               --text="$(printf "$T_POCOESPACIO" "$destino" "$tam_libre" "$tam_nec")" || exit 0
+       fi ;;
+esac
+
+etiqueta_txt=""
+[ "$d_lab" != - ] && etiqueta_txt=", «$d_lab»"
+zenity --question --title="$T_CONFIRMTIT" --width=520 --default-cancel \
+    --ok-label="$T_GO" --cancel-label="$T_NO" \
+    --text="$(printf "$T_CONFIRM" "$destino" "$d_tipo" "$d_tam" "$etiqueta_txt" \
+              "$contenido" "$tam_nec" "$tam_libre" "$aviso_datos")" || exit 0
+
+# ── 5. El traspaso, con barra de progreso ────────────────────────────────────
+ERRF="$tmp/error"
+inicio=$(date +%s)
+
+printf 'RUN\t%s\t%s\n' "$destino" "$copiar_datos" >&$FD_IN
+
+{
+    while IFS=$'\t' read -r etiqueta valor detalle <&$FD_OUT; do
+        case $etiqueta in
+            P) printf '%s\n' "$valor" ;;
+            E) printf '%s\n' "$valor" > "$ERRF" ;;
+            T) case $valor in
+                   PREP)      texto=$T_PREP ;;
+                   MOUNT)     texto=$T_MOUNT ;;
+                   SCAN)      texto=$T_SCAN ;;
+                   RSYNC)     texto="$T_RSYNC  $detalle" ;;
+                   FSTAB)     texto=$T_FSTAB ;;
+                   BOOTCONF)  texto=$T_BOOTCONF ;;
+                   IDENT)     texto=$T_IDENT ;;
+                   SSHKEYS)   texto=$T_SSHKEYS ;;
+                   INITRAMFS) texto=$T_INITRAMFS ;;
+                   GRUB)      texto=$T_GRUB ;;
+                   REFIND)    texto=$T_REFIND ;;
+                   NVRAM)     texto=$T_NVRAM ;;
+                   SYNC)      texto=$T_SYNCP ;;
+                   FIN)       texto=$T_FIN ;;
+                   *)         continue ;;
+               esac
+               printf '# %s\n' "$texto" ;;
+        esac
+    done
+} | zenity --progress --title="$T_TITLE" --text="$T_PREP" \
+        --percentage=0 --auto-close --width=560
+zrc=$?
+
+fin=$(date +%s)
+tiempo=$(duracion $(( fin - inicio )))
+rc=0
+clave=""; [ -s "$ERRF" ] && clave=$(cat "$ERRF")
+
+# Si el worker informó de un error, la barra se quedó abierta esperando y da
+# igual con qué botón se cerrara: manda el error, no el botón.
+if [ -z "$clave" ]; then
+    if [ "$zrc" != 0 ]; then
+        # Cerrar la tubería de lectura es lo único que puede parar a un proceso
+        # de root: morirá al intentar informar del avance. No se le espera, que
+        # puede tardar en darse cuenta si está en mitad de un paso largo.
+        exec {FD_OUT}<&-
+        exec {FD_IN}>&-
+        zenity --info --title="$T_TITLE" --width=420 --text="$T_CANCELADO"
+        exit 1
+    fi
+    wait "$wpid"; rc=$?
+    if [ "$rc" = 0 ]; then
+        # La coletilla se pega al formato, no se pasa como argumento, para que
+        # printf le interprete los saltos de línea.
+        zenity --info --title="$T_OKTIT" --width=440 \
+            --text="$(printf "$T_OK$nota_final" "$destino" "$tiempo")"
+        exit 0
+    fi
+fi
+
+case $clave in
+    NODEV)  motivo=$E_NODEV ;;
+    ESRAIZ) motivo=$E_ESRAIZ ;;
+    NOFS)   motivo=$E_NOFS ;;
+    NOEFI)  motivo=$E_NOEFI ;;
+    NOUUID) motivo=$E_NOUUID ;;
+    NOMOUNT) motivo=$E_NOMOUNT ;;
+    RSYNC)  motivo=$E_RSYNC ;;
+    # 126 y 127 son la forma que tiene pkexec de decir que no hubo permiso
+    *)      case $rc in
+                126|127) motivo=$T_ERRINSPECT ;;
+                *)       motivo=$E_GENERICO ;;
+            esac ;;
+esac
+
+registro="$HOME/traspasa-$(date +%Y%m%d_%H%M).log"
+cp -f "$LOG" "$registro" 2>/dev/null
+zenity --error --title="$T_ERRTIT" --width=480 \
+    --text="$motivo\n\n$T_ERRTIEMPO $tiempo\n$T_ERRLOG\n$registro"
+exit 1
