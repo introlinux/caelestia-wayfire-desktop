@@ -25,6 +25,17 @@
 
 #include <cairo.h>
 
+/* Wayfire has no union of two boxes, and its operator& on them answers whether
+ * they intersect rather than giving back the overlap. */
+static wf::geometry_t box_union(const wf::geometry_t& a, const wf::geometry_t& b)
+{
+    const int x1 = std::min(a.x, b.x);
+    const int y1 = std::min(a.y, b.y);
+    const int x2 = std::max(a.x + a.width, b.x + b.width);
+    const int y2 = std::max(a.y + a.height, b.y + b.height);
+    return {x1, y1, x2 - x1, y2 - y1};
+}
+
 /**
  * The scene node which paints the frame around a window. The look it goes for
  * is that of a GTK client-side header bar: rounded top corners, a hairline
@@ -61,6 +72,19 @@ class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_inter
         bool active   = false;
         bool baked    = false;
     } corners;
+
+    /* Nine slices of a drop shadow. The atlas only depends on the corner
+     * radius, the shadow size and the colour, never on the size of the window,
+     * so it survives a resize untouched. */
+    struct
+    {
+        wf::owned_texture_t tex;
+        int radius    = -1;
+        int size      = -1;
+        double scale  = 0;
+        bool active   = false;
+        bool baked    = false;
+    } shadow;
 
     void update_title(int width, int height, double scale, bool active)
     {
@@ -108,6 +132,175 @@ class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_inter
         corners.scale  = scale;
         corners.active = active;
         corners.baked  = true;
+    }
+
+    void update_shadow(int radius, int size, double scale, bool active)
+    {
+        if (shadow.baked && (shadow.radius == radius) && (shadow.size == size) &&
+            (shadow.scale == scale) && (shadow.active == active))
+        {
+            return;
+        }
+
+        auto surface = theme.render_shadow_atlas(radius, size, active, scale);
+        shadow.tex = wf::owned_texture_t{surface};
+        cairo_surface_destroy(surface);
+
+        shadow.radius = radius;
+        shadow.size   = size;
+        shadow.scale  = scale;
+        shadow.active = active;
+        shadow.baked  = true;
+    }
+
+    /** The radius the frame rounds its two top corners with, as render() uses it */
+    int get_frame_corner_radius() const
+    {
+        if (current_titlebar <= 0)
+        {
+            return 0;
+        }
+
+        return std::clamp(theme.get_corner_radius(), 0,
+            std::min(size.width / 2, current_titlebar));
+    }
+
+    /**
+     * What the user actually sees of the window, and so what casts the shadow:
+     * the frame inset by its border. With a transparent border, which is how it
+     * doubles as an invisible margin to grab when resizing, the border is not
+     * part of the silhouette at all. An opaque one simply hides the innermost
+     * band of the shadow, which is no worse than not casting it from there.
+     */
+    wf::geometry_t get_silhouette_box() const
+    {
+        const int b = current_thickness;
+        return {b, b, size.width - 2 * b, size.height - 2 * b};
+    }
+
+    bool has_shadow() const
+    {
+        if ((theme.get_shadow_size() <= 0) || (current_titlebar <= 0))
+        {
+            return false;
+        }
+
+        auto view = _view.lock();
+        if (!view)
+        {
+            return false;
+        }
+
+        /* Nothing casts a shadow when it is flush against the screen or against
+         * its neighbours, which is what GTK does with its own windows too. */
+        const auto& state = view->toplevel()->current();
+        return !state.fullscreen && !state.tiled_edges;
+    }
+
+    /**
+     * Where the nine slices land, frame-local. The three columns and rows are
+     * given as four coordinates each, so a cell is simply [x[i], x[i + 1]].
+     */
+    struct shadow_grid_t
+    {
+        int x[4], y[4];
+        /* Slice actually drawn, and the one the atlas was cut at. They differ
+         * on windows too small to fit two full slices. */
+        int drawn = 0;
+        int baked = 0;
+        int atlas = 0;
+        bool valid = false;
+    };
+
+    shadow_grid_t get_shadow_grid() const
+    {
+        shadow_grid_t g;
+        if (!has_shadow())
+        {
+            return g;
+        }
+
+        const int s   = theme.get_shadow_size();
+        const int off = theme.get_shadow_offset();
+        const auto si = get_silhouette_box();
+        /* The shadow reaches `s` out of the silhouette and is pushed down by
+         * `off`, as if the light came from above. */
+        const wf::geometry_t sb{
+            si.x - s, si.y - s + off, si.width + 2 * s, si.height + 2 * s
+        };
+
+        const int radius = std::max(0, get_frame_corner_radius() - current_thickness);
+        g.baked = wf::gtkdecor::decoration_theme_t::get_shadow_slice(radius, s);
+        g.atlas = wf::gtkdecor::decoration_theme_t::get_shadow_atlas_size(radius, s);
+        /* A window can be narrower or shorter than two slices. Cropping them
+         * from the outside keeps the falloff where it is actually seen. */
+        g.drawn = std::max(1, std::min({g.baked, sb.width / 2, sb.height / 2}));
+
+        g.x[0] = sb.x;
+        g.x[1] = sb.x + g.drawn;
+        g.x[2] = sb.x + sb.width - g.drawn;
+        g.x[3] = sb.x + sb.width;
+        g.y[0] = sb.y;
+        g.y[1] = sb.y + g.drawn;
+        g.y[2] = sb.y + sb.height - g.drawn;
+        g.y[3] = sb.y + sb.height;
+        g.valid = true;
+        return g;
+    }
+
+    /**
+     * Walk the eight slices that are drawn, middle one excluded: it would fall
+     * under the window, where nothing of it could be seen.
+     */
+    template<class F>
+    void for_each_shadow_slice(const shadow_grid_t& g, F&& fn) const
+    {
+        for (int j = 0; j < 3; j++)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                if ((i == 1) && (j == 1))
+                {
+                    continue;
+                }
+
+                const wf::geometry_t dst{
+                    g.x[i], g.y[j], g.x[i + 1] - g.x[i], g.y[j + 1] - g.y[j]
+                };
+                if ((dst.width > 0) && (dst.height > 0))
+                {
+                    fn(i, j, dst);
+                }
+            }
+        }
+    }
+
+    void render_shadow(const wf::scene::render_instruction_t& data, bool active)
+    {
+        const auto g = get_shadow_grid();
+        if (!g.valid)
+        {
+            return;
+        }
+
+        update_shadow(std::max(0, get_frame_corner_radius() - current_thickness),
+            theme.get_shadow_size(), data.target.scale, active);
+
+        const double sc   = data.target.scale;
+        const auto origin = get_offset();
+        /* Atlas columns, in its own logical units. The middle one is a single
+         * pixel of the straight side, stretched along the window. */
+        const double src_pos[3] = {0.0, (double)g.baked, (double)(g.atlas - g.drawn)};
+        const double src_len[3] = {(double)g.drawn, 1.0, (double)g.drawn};
+
+        for_each_shadow_slice(g, [&] (int i, int j, wf::geometry_t dst)
+        {
+            auto tex = shadow.tex.get_texture();
+            tex.source_box = wlr_fbox{
+                src_pos[i] * sc, src_pos[j] * sc, src_len[i] * sc, src_len[j] * sc
+            };
+            data.pass->add_texture(tex, data.target, dst + origin, data.damage);
+        });
     }
 
   public:
@@ -192,10 +385,14 @@ class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_inter
             }
         };
 
+        /* Behind everything else: the frame paints over it, and its own
+         * transparent parts leave it be. */
+        render_shadow(data, active);
+
         int radius = 0;
         if (T > 0)
         {
-            radius = std::clamp(theme.get_corner_radius(), 0, std::min(W / 2, T));
+            radius = get_frame_corner_radius();
             if (radius > 0)
             {
                 update_corners(radius, data.target.scale, active);
@@ -328,7 +525,23 @@ class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_inter
 
     wf::geometry_t get_bounding_box() override
     {
-        return wf::construct_box(get_offset(), size);
+        auto box = wf::construct_box(get_offset(), size);
+
+        /* The shadow is painted outside the frame, so it has to be part of the
+         * box or it would never be damaged, and so never repainted. Nothing in
+         * the scene graph clips a view to its geometry: an inner node reports
+         * the union of its children and passes damage straight down. */
+        const auto g = get_shadow_grid();
+        if (g.valid)
+        {
+            const auto origin = get_offset();
+            for_each_shadow_slice(g, [&] (int, int, wf::geometry_t dst)
+            {
+                box = box_union(box, dst + origin);
+            });
+        }
+
+        return box;
     }
 
     /* wf::compositor_surface_t implementation */
@@ -418,6 +631,19 @@ class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_inter
     {
         input_region  = layout.calculate_region();
         render_region = input_region;
+
+        /* Here is where the two part ways: the shadow is painted, so it joins
+         * the render region, but it stays out of the input one on purpose. A
+         * band that swallowed clicks would make it impossible to reach
+         * anything sitting just behind a window. */
+        const auto g = get_shadow_grid();
+        if (g.valid)
+        {
+            for_each_shadow_slice(g, [&] (int, int, wf::geometry_t dst)
+            {
+                render_region |= dst;
+            });
+        }
     }
 
     void clear_regions()

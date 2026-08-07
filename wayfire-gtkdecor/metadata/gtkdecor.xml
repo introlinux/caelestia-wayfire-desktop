@@ -49,6 +49,20 @@
 				<min>0</min>
 				<max>100</max>
 			</option>
+			<option name="shadow_size" type="int">
+				<_short>Shadow size</_short>
+				<_long>How far the drop shadow reaches out of the window, in pixels. Set it to 0 to drop no shadow at all. Maximised, tiled and fullscreen windows never cast one.</_long>
+				<default>24</default>
+				<min>0</min>
+				<max>100</max>
+			</option>
+			<option name="shadow_offset" type="int">
+				<_short>Shadow offset</_short>
+				<_long>How far down the shadow is pushed, in pixels, as if the light came from above the window.</_long>
+				<default>6</default>
+				<min>0</min>
+				<max>100</max>
+			</option>
 		</group>
 
 		<group>
@@ -101,6 +115,16 @@
 				<_short>Title color (unfocused)</_short>
 				<_long>Color of the title and of the button icons of unfocused windows.</_long>
 				<default>#3D3D3D80</default>
+			</option>
+			<option name="shadow_color" type="color">
+				<_short>Shadow color (focused)</_short>
+				<_long>Color of the drop shadow of the focused window. Its alpha is what sets how dark the shadow gets.</_long>
+				<default>#00000059</default>
+			</option>
+			<option name="inactive_shadow_color" type="color">
+				<_short>Shadow color (unfocused)</_short>
+				<_long>Color of the drop shadow of unfocused windows. A fainter shadow than the focused one is what makes the focused window look closer.</_long>
+				<default>#00000026</default>
 			</option>
 			<option name="button_color" type="color">
 				<_short>Button color</_short>

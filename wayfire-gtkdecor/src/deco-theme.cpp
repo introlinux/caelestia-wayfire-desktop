@@ -3,6 +3,9 @@
 #include <wayfire/opengl.hpp>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <vector>
 
 namespace wf
 {
@@ -50,6 +53,16 @@ int decoration_theme_t::get_button_spacing() const
     return button_spacing;
 }
 
+int decoration_theme_t::get_shadow_size() const
+{
+    return shadow_size;
+}
+
+int decoration_theme_t::get_shadow_offset() const
+{
+    return shadow_offset;
+}
+
 void decoration_theme_t::set_buttons(button_type_t flags)
 {
     button_flags = flags;
@@ -78,6 +91,11 @@ wf::color_t decoration_theme_t::get_separator_color(bool) const
 wf::color_t decoration_theme_t::get_font_color(bool active) const
 {
     return active ? font_color : inactive_font_color;
+}
+
+wf::color_t decoration_theme_t::get_shadow_color(bool active) const
+{
+    return active ? shadow_color : inactive_shadow_color;
 }
 
 static void set_source(cairo_t *cr, const wf::color_t& color)
@@ -137,6 +155,142 @@ cairo_surface_t*decoration_theme_t::render_corner(int radius, bool right, bool a
     cairo_restore(cr);
 
     cairo_destroy(cr);
+    return surface;
+}
+
+static inline void px_add(int *sum, uint32_t p)
+{
+    sum[0] += (p >> 24) & 0xFF;
+    sum[1] += (p >> 16) & 0xFF;
+    sum[2] += (p >> 8) & 0xFF;
+    sum[3] += p & 0xFF;
+}
+
+static inline void px_sub(int *sum, uint32_t p)
+{
+    sum[0] -= (p >> 24) & 0xFF;
+    sum[1] -= (p >> 16) & 0xFF;
+    sum[2] -= (p >> 8) & 0xFF;
+    sum[3] -= p & 0xFF;
+}
+
+static inline uint32_t px_avg(const int *sum, int n)
+{
+    return ((uint32_t)(sum[0] / n) << 24) | ((uint32_t)(sum[1] / n) << 16) |
+           ((uint32_t)(sum[2] / n) << 8) | (uint32_t)(sum[3] / n);
+}
+
+/**
+ * Blur the pixels of @surface with three passes of a separable box blur, which
+ * lands close enough to a gaussian for a shadow. ARGB32 is premultiplied and
+ * every channel blurs linearly, so averaging the raw bytes is correct; the
+ * shape is a single flat colour anyway.
+ *
+ * The atlas is small and this only runs when the shadow is baked, not per
+ * frame, so a sliding window per row and column is quick enough.
+ */
+static void box_blur(cairo_surface_t *surface, int radius)
+{
+    cairo_surface_flush(surface);
+
+    const int w = cairo_image_surface_get_width(surface);
+    const int h = cairo_image_surface_get_height(surface);
+    auto data   = (unsigned char*)cairo_image_surface_get_data(surface);
+    if (!data || (w <= 0) || (h <= 0) || (radius <= 0))
+    {
+        return;
+    }
+
+    const int stride = cairo_image_surface_get_stride(surface);
+    /* Work on a tightly packed copy: the cairo stride may be padded. */
+    std::vector<uint32_t> buf((size_t)w * h);
+    for (int y = 0; y < h; y++)
+    {
+        memcpy(&buf[(size_t)y * w], data + (size_t)y * stride, (size_t)w * 4);
+    }
+
+    std::vector<uint32_t> tmp(buf.size());
+    const int window = 2 * radius + 1;
+    const auto at    = [] (int v, int lo, int hi) { return std::clamp(v, lo, hi); };
+
+    for (int pass = 0; pass < 3; pass++)
+    {
+        for (int y = 0; y < h; y++)
+        {
+            int sum[4] = {0, 0, 0, 0};
+            for (int i = -radius; i <= radius; i++)
+            {
+                px_add(sum, buf[(size_t)y * w + at(i, 0, w - 1)]);
+            }
+
+            for (int x = 0; x < w; x++)
+            {
+                tmp[(size_t)y * w + x] = px_avg(sum, window);
+                px_sub(sum, buf[(size_t)y * w + at(x - radius, 0, w - 1)]);
+                px_add(sum, buf[(size_t)y * w + at(x + radius + 1, 0, w - 1)]);
+            }
+        }
+
+        for (int x = 0; x < w; x++)
+        {
+            int sum[4] = {0, 0, 0, 0};
+            for (int i = -radius; i <= radius; i++)
+            {
+                px_add(sum, tmp[(size_t)at(i, 0, h - 1) * w + x]);
+            }
+
+            for (int y = 0; y < h; y++)
+            {
+                buf[(size_t)y * w + x] = px_avg(sum, window);
+                px_sub(sum, tmp[(size_t)at(y - radius, 0, h - 1) * w + x]);
+                px_add(sum, tmp[(size_t)at(y + radius + 1, 0, h - 1) * w + x]);
+            }
+        }
+    }
+
+    for (int y = 0; y < h; y++)
+    {
+        memcpy(data + (size_t)y * stride, &buf[(size_t)y * w], (size_t)w * 4);
+    }
+
+    cairo_surface_mark_dirty(surface);
+}
+
+int decoration_theme_t::get_shadow_slice(int radius, int size)
+{
+    /* A blurred corner reaches radius + 2 * size into the atlas: the arc spans
+     * radius, and the blur bleeds size on either side of it. Slicing any
+     * closer in would leave the stretched middle strips non uniform, which
+     * shows up as the shadow rippling along the sides of wide windows. */
+    return std::max(1, radius + 2 * size);
+}
+
+int decoration_theme_t::get_shadow_atlas_size(int radius, int size)
+{
+    return 2 * get_shadow_slice(radius, size) + 1;
+}
+
+cairo_surface_t*decoration_theme_t::render_shadow_atlas(int radius, int size, bool active,
+    double scale) const
+{
+    const int n  = get_shadow_atlas_size(radius, size);
+    const int px = std::max(1, (int)std::ceil(n * scale));
+    auto surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, px, px);
+    auto cr = cairo_create(surface);
+    cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
+    cairo_scale(cr, scale, scale);
+
+    /* The shape sits `size` away from every edge, so the blur lands just
+     * inside the atlas. Its bottom corners are square, like the window's. */
+    set_source(cr, get_shadow_color(active));
+    rounded_top_rect(cr, size, size, n - 2.0 * size, n - 2.0 * size, radius);
+    cairo_fill(cr);
+    cairo_destroy(cr);
+
+    /* Three box blurs of radius r reach 3r together, and that is what has to
+     * add up to the shadow size. */
+    box_blur(surface, std::max(1, (int)std::lround(size * scale / 3.0)));
+
     return surface;
 }
 
