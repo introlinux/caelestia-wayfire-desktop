@@ -161,8 +161,11 @@ class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_inter
             return 0;
         }
 
+        /* The upper bound is floored at 0 on purpose: std::clamp asserts when
+         * hi < lo, and an assert here aborts the whole compositor. A degenerate
+         * size must round no corners, not take the session down. */
         return std::clamp(theme.get_corner_radius(), 0,
-            std::min(size.width / 2, current_titlebar));
+            std::max(0, std::min(size.width / 2, current_titlebar)));
     }
 
     /**
@@ -315,10 +318,13 @@ class gtk_decoration_node_t : public wf::scene::node_t, public wf::pointer_inter
      * obvious case. */
     wf::region_t render_region;
 
-    wf::dimensions_t size;
+    /* Initialised here and not just in resize(): the constructor already reads
+     * them through update_decoration_size() -> recalculate_regions(), which is
+     * long before gtk_decorator_t gets to call resize(). */
+    wf::dimensions_t size = {0, 0};
 
-    int current_thickness;
-    int current_titlebar;
+    int current_thickness = 0;
+    int current_titlebar  = 0;
 
     gtk_decoration_node_t(wayfire_toplevel_view view) :
         node_t(false),
