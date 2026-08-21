@@ -14,6 +14,9 @@ Singleton {
     property string previousSinkName: ""
     property string previousSourceName: ""
 
+    // Ultimo volumen pendiente de mandarle a wpctl (ver flushRouteVolume).
+    property var pendingRouteVolume: null
+
     property list<PwNode> sinks: []
     property list<PwNode> sources: []
     property list<PwNode> streams: []
@@ -41,11 +44,56 @@ Singleton {
     readonly property alias cava: cava
     readonly property alias beatTracker: beatTracker
 
+    // Quickshell escribe el volumen de un nodo que cuelga de una tarjeta a
+    // traves de la "route" de esa tarjeta, pero SOLO si la route publica
+    // `volumeStep` (node.cpp, PwNodeBoundAudio::setVolumes: cuando volumeStep
+    // vale -1 la rama entera no hace nada). Las tarjetas ALSA lo publican; las
+    // bluez5 no, asi que con un altavoz o unos auriculares Bluetooth la
+    // escritura se pierde en silencio: el modelo QML si se actualiza (el
+    // deslizador se mueve) pero el aparato se queda como estaba. Leer si
+    // funciona, porque de eso ya se encarga la route.
+    // Para esos nodos ponemos el volumen con wpctl, que escribe en la route
+    // igual que hacen pavucontrol o GNOME.
+    function usesRouteVolume(node: PwNode): bool {
+        const props = node?.properties;
+        if (!props || props["device.id"] === undefined)
+            return false;
+        return (props["node.name"] ?? "").startsWith("bluez_");
+    }
+
+    function applyVolume(node: PwNode, newVolume: real): void {
+        const volume = Math.max(0, Math.min(GlobalConfig.services.maxVolume, newVolume));
+        node.audio.muted = false;
+        if (root.usesRouteVolume(node))
+            root.queueRouteVolume(node, volume);
+        else
+            node.audio.volume = volume;
+    }
+
+    // wpctl es un proceso, no una llamada: al arrastrar el deslizador llegan
+    // muchos cambios seguidos, asi que solo guardamos el ultimo y lo mandamos
+    // cuando el anterior ha terminado.
+    function queueRouteVolume(node: PwNode, volume: real): void {
+        root.pendingRouteVolume = {
+            id: node.id,
+            volume
+        };
+        root.flushRouteVolume();
+    }
+
+    function flushRouteVolume(): void {
+        const pending = root.pendingRouteVolume;
+        if (!pending || volumeProc.running)
+            return;
+
+        root.pendingRouteVolume = null;
+        volumeProc.command = ["wpctl", "set-volume", `${pending.id}`, pending.volume.toFixed(3)];
+        volumeProc.running = true;
+    }
+
     function setVolume(newVolume: real): void {
-        if (sink?.ready && sink?.audio) {
-            sink.audio.muted = false;
-            sink.audio.volume = Math.max(0, Math.min(GlobalConfig.services.maxVolume, newVolume));
-        }
+        if (sink?.ready && sink?.audio)
+            root.applyVolume(sink, newVolume);
     }
 
     function incrementVolume(amount: real): void {
@@ -57,10 +105,8 @@ Singleton {
     }
 
     function setSourceVolume(newVolume: real): void {
-        if (source?.ready && source?.audio) {
-            source.audio.muted = false;
-            source.audio.volume = Math.max(0, Math.min(GlobalConfig.services.maxVolume, newVolume));
-        }
+        if (source?.ready && source?.audio)
+            root.applyVolume(source, newVolume);
     }
 
     function incrementSourceVolume(amount: real): void {
@@ -327,6 +373,18 @@ Singleton {
 
         interval: 2000
         onTriggered: devicesProc.running = true
+    }
+
+    Process {
+        id: volumeProc
+
+        stderr: StdioCollector {
+            onStreamFinished: {
+                if (text.trim())
+                    console.warn("Audio: fallo al cambiar el volumen:", text.trim());
+            }
+        }
+        onExited: root.flushRouteVolume()
     }
 
     Process {
