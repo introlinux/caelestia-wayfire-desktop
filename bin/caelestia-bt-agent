@@ -1,0 +1,362 @@
+#!/usr/bin/env python3
+"""caelestia-bt-agent: agente de emparejamiento Bluetooth (org.bluez.Agent1).
+
+BlueZ NO empareja si no hay ningún agente registrado en la sesión: el
+`Pair()` falla con "Authentication Failed" / "Authentication Canceled".
+Quickshell.Bluetooth (el módulo que usa el panel de control del shell) solo
+implementa Adapter1/Device1/Battery1 — no exporta Agent1 —, y a diferencia de
+GNOME o KDE, una sesión de Wayfire pelada no trae ningún agente. Por eso los
+dispositivos aparecían en la lista pero no llegaban a emparejarse.
+
+Este proceso cubre ese hueco: exporta un org.bluez.Agent1 en el bus del
+sistema, lo registra con capacidad KeyboardDisplay y lo pone como agente por
+defecto. Se lanza desde el [autostart] de wayfire.ini.
+
+Reparto de trabajo con BlueZ:
+  - Emparejamientos "Just Works" que inicia el usuario (altavoces, cascos,
+    ratones) los auto-acepta el propio bluetoothd sin llamarnos, porque sabe
+    que hay un bonding local en curso. Solo exige que exista un agente.
+  - Lo que sí llega aquí son los casos con interacción real: comparar código
+    con un móvil, teclear el PIN de un teclado, o autorizar un emparejamiento
+    ENTRANTE (ahí sí preguntamos siempre, es la parte sensible).
+
+Los diálogos son zenity y se lanzan de forma asíncrona: la respuesta D-Bus se
+envía desde el callback, así el bucle principal sigue libre para atender el
+Cancel() que manda BlueZ cuando el otro extremo se rinde antes que nosotros.
+
+Si bluetoothd se reinicia, la suscripción a su nombre en el bus vuelve a
+registrar el agente sin tener que reiniciar la sesión.
+
+Prueba: matar el proceso, `bluetoothctl pair <MAC>` falla; con él en marcha,
+el botón de emparejar del panel de control funciona.
+"""
+
+import shlex
+import signal
+import socket
+import sys
+
+import gi
+
+gi.require_version("GLib", "2.0")
+gi.require_version("Gio", "2.0")
+gi.require_version("GLibUnix", "2.0")
+from gi.repository import GLib, GLibUnix, Gio  # noqa: E402
+
+AGENT_PATH = "/org/caelestia/BtAgent"
+CAPABILITY = "KeyboardDisplay"
+DIALOG_TIMEOUT = 60  # segundos; BlueZ suele rendirse antes y manda Cancel()
+
+AGENT_XML = """
+<node>
+  <interface name='org.bluez.Agent1'>
+    <method name='Release'/>
+    <method name='RequestPinCode'>
+      <arg type='o' name='device' direction='in'/>
+      <arg type='s' name='pincode' direction='out'/>
+    </method>
+    <method name='DisplayPinCode'>
+      <arg type='o' name='device' direction='in'/>
+      <arg type='s' name='pincode' direction='in'/>
+    </method>
+    <method name='RequestPasskey'>
+      <arg type='o' name='device' direction='in'/>
+      <arg type='u' name='passkey' direction='out'/>
+    </method>
+    <method name='DisplayPasskey'>
+      <arg type='o' name='device' direction='in'/>
+      <arg type='u' name='passkey' direction='in'/>
+      <arg type='q' name='entered' direction='in'/>
+    </method>
+    <method name='RequestConfirmation'>
+      <arg type='o' name='device' direction='in'/>
+      <arg type='u' name='passkey' direction='in'/>
+    </method>
+    <method name='RequestAuthorization'>
+      <arg type='o' name='device' direction='in'/>
+    </method>
+    <method name='AuthorizeService'>
+      <arg type='o' name='device' direction='in'/>
+      <arg type='s' name='uuid' direction='in'/>
+    </method>
+    <method name='Cancel'/>
+  </interface>
+</node>
+"""
+
+REJECTED = "org.bluez.Error.Rejected"
+CANCELED = "org.bluez.Error.Canceled"
+
+
+def log(msg):
+    print(f"[bt-agent] {msg}", file=sys.stderr, flush=True)
+
+
+class BtAgent:
+    def __init__(self):
+        self.bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        self.session_bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        self.reg_id = None
+        self.pending = None  # (Gio.Subprocess, Gio.DBusMethodInvocation) en curso
+
+        node = Gio.DBusNodeInfo.new_for_xml(AGENT_XML)
+        self.reg_id = self.bus.register_object_with_closures2(
+            AGENT_PATH, node.interfaces[0], self._on_call, None, None
+        )
+
+        # Re-registrarse cada vez que bluetoothd aparece (arranque tardío o
+        # reinicio del servicio): sin esto el agente queda huérfano y volvemos
+        # al bug original hasta cerrar sesión.
+        Gio.bus_watch_name_on_connection(
+            self.bus,
+            "org.bluez",
+            Gio.BusNameWatcherFlags.NONE,
+            lambda *_: self._register(),
+            lambda *_: log("bluetoothd se ha ido; esperando a que vuelva"),
+        )
+
+    # --- registro ---------------------------------------------------------
+
+    def _register(self):
+        try:
+            self.bus.call_sync(
+                "org.bluez", "/org/bluez", "org.bluez.AgentManager1",
+                "RegisterAgent", GLib.Variant("(os)", (AGENT_PATH, CAPABILITY)),
+                None, Gio.DBusCallFlags.NONE, -1, None,
+            )
+        except GLib.Error as e:
+            # AlreadyExists es normal si bluetoothd emite el nombre dos veces.
+            if "AlreadyExists" not in str(e):
+                log(f"RegisterAgent falló: {e.message}")
+                return
+        try:
+            self.bus.call_sync(
+                "org.bluez", "/org/bluez", "org.bluez.AgentManager1",
+                "RequestDefaultAgent", GLib.Variant("(o)", (AGENT_PATH,)),
+                None, Gio.DBusCallFlags.NONE, -1, None,
+            )
+        except GLib.Error as e:
+            log(f"RequestDefaultAgent falló: {e.message}")
+            return
+        log(f"agente registrado como {CAPABILITY}")
+
+    def unregister(self):
+        try:
+            self.bus.call_sync(
+                "org.bluez", "/org/bluez", "org.bluez.AgentManager1",
+                "UnregisterAgent", GLib.Variant("(o)", (AGENT_PATH,)),
+                None, Gio.DBusCallFlags.NONE, 2000, None,
+            )
+        except GLib.Error:
+            pass
+
+    # --- utilidades -------------------------------------------------------
+
+    def _device_prop(self, path, prop, default=""):
+        try:
+            v = self.bus.call_sync(
+                "org.bluez", path, "org.freedesktop.DBus.Properties", "Get",
+                GLib.Variant("(ss)", ("org.bluez.Device1", prop)),
+                None, Gio.DBusCallFlags.NONE, 2000, None,
+            )
+            return v.unpack()[0]
+        except GLib.Error:
+            return default
+
+    def _device_name(self, path):
+        name = self._device_prop(path, "Alias") or self._device_prop(path, "Name")
+        addr = self._device_prop(path, "Address")
+        if name and addr:
+            return f"{name} ({addr})"
+        return name or addr or path.rsplit("/", 1)[-1]
+
+    def _notify(self, title, body):
+        # Los "Display*" son informativos: nada que responder, solo avisar.
+        try:
+            Gio.Subprocess.new(
+                ["notify-send", "-a", "Bluetooth", "-i", "bluetooth",
+                 "-t", str(DIALOG_TIMEOUT * 1000), title, body],
+                Gio.SubprocessFlags.NONE,
+            )
+        except GLib.Error as e:
+            log(f"notify-send falló: {e.message}")
+
+    def _dialog(self, argv, invocation, on_done):
+        """Lanza zenity sin bloquear y pasa (exit_ok, stdout) a on_done."""
+        if self.pending:
+            # BlueZ solo mantiene una petición viva; si llega otra, la anterior
+            # ya no vale.
+            self._cancel_pending()
+
+        try:
+            proc = Gio.Subprocess.new(argv, Gio.SubprocessFlags.STDOUT_PIPE)
+        except GLib.Error as e:
+            log(f"no se pudo abrir el diálogo ({shlex.join(argv)}): {e.message}")
+            invocation.return_dbus_error(REJECTED, "no dialog")
+            return
+
+        self.pending = (proc, invocation)
+
+        def finished(p, res):
+            if self.pending and self.pending[0] is p:
+                self.pending = None
+            try:
+                ok, out, _ = p.communicate_utf8_finish(res)
+            except GLib.Error as e:
+                log(f"diálogo interrumpido: {e.message}")
+                invocation.return_dbus_error(CANCELED, "dialog failed")
+                return
+            on_done(p.get_successful(), (out or "").strip())
+
+        proc.communicate_utf8_async(None, None, finished)
+
+    def _cancel_pending(self):
+        if not self.pending:
+            return
+        proc, _ = self.pending
+        self.pending = None
+        proc.force_exit()
+
+    # --- despacho de métodos ---------------------------------------------
+
+    def _on_call(self, conn, sender, path, iface, method, params, invocation):
+        args = params.unpack()
+        handler = getattr(self, f"_m_{method}", None)
+        if handler is None:
+            invocation.return_dbus_error(REJECTED, f"método desconocido: {method}")
+            return
+        handler(invocation, *args)
+
+    def _m_Release(self, invocation):
+        log("BlueZ ha liberado el agente")
+        invocation.return_value(None)
+
+    def _m_Cancel(self, invocation):
+        log("petición cancelada por el otro extremo")
+        self._cancel_pending()
+        invocation.return_value(None)
+
+    def _m_RequestPinCode(self, invocation, device):
+        name = self._device_name(device)
+        argv = ["zenity", "--entry", "--title=Emparejamiento Bluetooth",
+                f"--text=Introduce el PIN de {name}:",
+                f"--timeout={DIALOG_TIMEOUT}"]
+
+        def done(ok, out):
+            if ok and out:
+                invocation.return_value(GLib.Variant("(s)", (out,)))
+            else:
+                invocation.return_dbus_error(REJECTED, "PIN rechazado")
+
+        self._dialog(argv, invocation, done)
+
+    def _m_RequestPasskey(self, invocation, device):
+        name = self._device_name(device)
+        argv = ["zenity", "--entry", "--title=Emparejamiento Bluetooth",
+                f"--text=Introduce el código de 6 cifras de {name}:",
+                f"--timeout={DIALOG_TIMEOUT}"]
+
+        def done(ok, out):
+            digits = "".join(c for c in out if c.isdigit())
+            if ok and digits:
+                invocation.return_value(GLib.Variant("(u)", (int(digits) % 1000000,)))
+            else:
+                invocation.return_dbus_error(REJECTED, "código rechazado")
+
+        self._dialog(argv, invocation, done)
+
+    def _m_DisplayPinCode(self, invocation, device, pincode):
+        self._notify("Emparejamiento Bluetooth",
+                     f"Teclea {pincode} en {self._device_name(device)} y pulsa Intro.")
+        invocation.return_value(None)
+
+    def _m_DisplayPasskey(self, invocation, device, passkey, entered):
+        self._notify("Emparejamiento Bluetooth",
+                     f"Código de {self._device_name(device)}: {passkey:06d}")
+        invocation.return_value(None)
+
+    def _m_RequestConfirmation(self, invocation, device, passkey):
+        name = self._device_name(device)
+        argv = ["zenity", "--question", "--title=Emparejamiento Bluetooth",
+                f"--text=¿Coincide este código con el que muestra {name}?"
+                f"\n\n{passkey:06d}",
+                "--ok-label=Emparejar", "--cancel-label=Rechazar",
+                f"--timeout={DIALOG_TIMEOUT}"]
+
+        def done(ok, _out):
+            if ok:
+                invocation.return_value(None)
+            else:
+                invocation.return_dbus_error(REJECTED, "confirmación denegada")
+
+        self._dialog(argv, invocation, done)
+
+    def _m_RequestAuthorization(self, invocation, device):
+        # Emparejamiento entrante sin código (Just Works): el único filtro es
+        # el usuario, así que aquí NO se auto-acepta nunca.
+        name = self._device_name(device)
+        argv = ["zenity", "--question", "--title=Emparejamiento Bluetooth",
+                f"--text=¿Permitir que {name} se empareje con este equipo?",
+                "--ok-label=Emparejar", "--cancel-label=Rechazar",
+                "--default-cancel", f"--timeout={DIALOG_TIMEOUT}"]
+
+        def done(ok, _out):
+            if ok:
+                invocation.return_value(None)
+            else:
+                invocation.return_dbus_error(REJECTED, "emparejamiento denegado")
+
+        self._dialog(argv, invocation, done)
+
+    def _m_AuthorizeService(self, invocation, device, uuid):
+        # Un dispositivo ya emparejado pidiendo uno de sus perfiles (A2DP,
+        # HFP, HID...) es lo normal; preguntar aquí sería ruido puro.
+        if self._device_prop(device, "Paired", False):
+            invocation.return_value(None)
+            return
+
+        name = self._device_name(device)
+        argv = ["zenity", "--question", "--title=Servicio Bluetooth",
+                f"--text=¿Autorizar el servicio {uuid} de {name}?",
+                "--ok-label=Autorizar", "--cancel-label=Denegar",
+                "--default-cancel", f"--timeout={DIALOG_TIMEOUT}"]
+
+        def done(ok, _out):
+            if ok:
+                invocation.return_value(None)
+            else:
+                invocation.return_dbus_error(REJECTED, "servicio denegado")
+
+        self._dialog(argv, invocation, done)
+
+
+def single_instance():
+    """Cerrojo por socket abstracto: se libera solo al morir el proceso, así
+    que no deja restos que bloqueen el arranque tras un cierre sucio."""
+    lock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    try:
+        lock.bind("\0caelestia-bt-agent")
+    except OSError:
+        log("ya hay otro agente en marcha; salgo")
+        sys.exit(0)
+    return lock  # hay que mantener la referencia viva
+
+
+def main():
+    _lock = single_instance()  # noqa: F841
+    agent = BtAgent()
+    loop = GLib.MainLoop()
+
+    def quit(*_):
+        agent.unregister()
+        loop.quit()
+        return GLib.SOURCE_REMOVE
+
+    GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, quit)
+    GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, quit)
+
+    loop.run()
+
+
+if __name__ == "__main__":
+    main()

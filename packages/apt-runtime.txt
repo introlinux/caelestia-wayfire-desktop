@@ -19,6 +19,9 @@ cliphist
 wl-clipboard
 libnotify-bin
 # Hardware
+# bluez trae bluetoothd; el agente de emparejamiento lo pone
+# bin/caelestia-bt-agent (python3-gi + zenity, ambos más abajo).
+bluez
 brightnessctl
 ddcutil
 lm-sensors

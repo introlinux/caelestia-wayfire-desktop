@@ -85,6 +85,13 @@ izquierda; acepta arrastrar y soltar archivos sobre sus herramientas.
   `Super+arrastrar` si hace falta.
 - Grabación de pantalla con `gpu-screen-recorder`; los vídeos van a
   `~/Vídeos/Recordings`.
+- Bluetooth: el panel de control empareja y conecta con `bin/caelestia-bt-agent`,
+  un agente `org.bluez.Agent1` que arranca con la sesión. BlueZ rechaza todo
+  emparejamiento si no hay ninguno registrado, y Quickshell no lo trae; sin él
+  los dispositivos se listan pero fallan con «Authentication Failed». Los
+  cascos y altavoces se emparejan sin preguntar nada; con móviles o teclados
+  sale un diálogo para comparar el código o teclear el PIN. Marca el
+  dispositivo como *Trusted* (pestaña de detalles) para que se reconecte solo.
 - Gato de escritorio `oneko-rust` (persigue el cursor; port propio a Wayfire
   vía IPC). Arranca con la sesión y se puede encender/apagar con un clic en
   el gato de la sección Multimedia del dashboard. Opciones en
